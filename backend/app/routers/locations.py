@@ -2,7 +2,7 @@ from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
-
+from app.models.observation_session import ObservationSession
 from app.core.deps import get_current_user
 from app.db.database import get_db
 from app.models.location import Location
@@ -26,6 +26,10 @@ def create_location(
         name=location_in.name,
         latitude=location_in.latitude,
         longitude=location_in.longitude,
+
+        # NEW ✅
+        timezone=location_in.timezone,
+
         notes=location_in.notes,
         owner_id=current_user.id,
     )
@@ -94,14 +98,17 @@ def delete_location(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    location = (
+    loc = (
         db.query(Location)
-        .filter(Location.id == location_id, Location.owner_id == current_user.id)
+        .filter(
+            Location.id == location_id,
+            Location.owner_id == current_user.id,
+        )
         .first()
     )
-    if not location:
+    if not loc:
         raise HTTPException(status_code=404, detail="Location not found")
 
-    db.delete(location)
+    db.delete(loc)
     db.commit()
     return None

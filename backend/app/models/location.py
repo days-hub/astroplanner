@@ -11,9 +11,17 @@ class Location(Base):
     name = Column(String, nullable=False)
     latitude = Column(Float, nullable=True)
     longitude = Column(Float, nullable=True)
+
+    timezone = Column(String, nullable=True)  # e.g. "America/Toronto", "Australia/Sydney"
+
     notes = Column(Text, nullable=True)
 
     owner_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
 
     owner = relationship("User", back_populates="locations")
-    sessions = relationship("ObservationSession", back_populates="location", cascade="all, delete-orphan")
+    sessions = relationship(
+        "ObservationSession",
+        back_populates="location",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )

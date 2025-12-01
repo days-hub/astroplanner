@@ -75,7 +75,7 @@ def list_logs(
     return logs
 
 
-@router.put("/{log_id}", response_model=ObservationLogRead)
+@router.patch("/{log_id}", response_model=ObservationLogRead)
 def update_log(
     session_id: int,
     log_id: int,

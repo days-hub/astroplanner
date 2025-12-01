@@ -58,17 +58,13 @@ def login_for_access_token(
         expires_delta=access_token_expires,
 )
 
-    # Optional: set HTTP-only cookie as well as returning the token
-    response.set_cookie(
-        key="access_token",
-        value=f"Bearer {access_token}",
-        httponly=True,
-        samesite="lax",
-        secure=False,  # set True in production over HTTPS
-    )
 
     return Token(access_token=access_token, token_type="bearer")
 
+@router.post("/logout")
+def logout(response: Response):
+    response.delete_cookie("access_token")
+    return {"ok": True}
 
 @router.get("/me", response_model=UserRead)
 def read_current_user(current_user: User = Depends(deps.get_current_user)):

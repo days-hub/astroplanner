@@ -21,4 +21,4 @@ class ObservationSession(Base):
 
     owner = relationship("User", back_populates="sessions")
     location = relationship("Location", back_populates="sessions")
-    logs = relationship("ObservationLog", back_populates="session", cascade="all, delete-orphan")
+    logs = relationship("ObservationLog", back_populates="session", cascade="all, delete-orphan", passive_deletes=True)
