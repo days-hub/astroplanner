@@ -16,3 +16,9 @@ dist/
 .DS_Store
 .idea/
 .vscode/
+
+# big assets
+frontend/public/videos/
+**/*.mp4
+**/*.mov
+**/*.mkv
