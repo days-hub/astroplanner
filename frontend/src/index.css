@@ -53,6 +53,42 @@ button:focus-visible {
   outline: 4px auto -webkit-focus-ring-color;
 }
 
+/* SpaceBackground photo layer: fade in, then a very slow drift/zoom */
+.space-bg-img {
+  opacity: 0;
+  animation:
+    space-bg-fade-in 1.8s ease-out forwards,
+    space-bg-drift 90s ease-in-out 1.8s infinite;
+}
+
+@keyframes space-bg-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 0.55;
+  }
+}
+
+@keyframes space-bg-drift {
+  0% {
+    transform: scale(1.05);
+  }
+  50% {
+    transform: scale(1.13) translate(-1.5%, 1%);
+  }
+  100% {
+    transform: scale(1.05);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .space-bg-img {
+    animation: none;
+    opacity: 0.55;
+  }
+}
+
 @media (prefers-color-scheme: light) {
   :root {
     color: #213547;

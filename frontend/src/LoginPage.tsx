@@ -1,7 +1,8 @@
 import type { FormEvent } from "react";
 import { useState } from "react";
-import BackgroundVideo from "./BackgroundVideo";
-import api, { setAuthToken } from "./api";
+import SpaceBackground from "./SpaceBackground";
+import api, { apiErrorMessage, setAuthToken } from "./api";
+import { btnPrimary, btnSecondary } from "./theme";
 const loginPageStyle: React.CSSProperties = {
   minHeight: "100vh",
   display: "flex",
@@ -55,26 +56,19 @@ const inputStyle: React.CSSProperties = {
 };
 
 const buttonStyle: React.CSSProperties = {
+  ...btnPrimary,
   width: "100%",
   marginTop: "1rem",
   padding: "0.75rem",
-  borderRadius: 9999,
-  border: "none",
-  background:
-    "linear-gradient(135deg, #38bdf8 0%, #6366f1 40%, #a855f7 100%)",
-  color: "white",
-  fontWeight: 600,
   fontSize: "0.95rem",
-  cursor: "pointer",
-  boxShadow: "0 10px 25px rgba(56,189,248,0.35)",
 };
 interface Props {
   onLogin: (token: string) => void;
   onGoToRegister: () => void;
 }
 export default function LoginPage({ onLogin, onGoToRegister }: Props) {
-  const [email, setEmail] = useState("test@example.com");
-  const [password, setPassword] = useState("test1234");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -98,7 +92,7 @@ export default function LoginPage({ onLogin, onGoToRegister }: Props) {
       onLogin(token);
     } catch (err) {
       console.error(err);
-      setError("Login failed. Check email and password.");
+      setError(apiErrorMessage(err, "Login failed. Check email and password."));
     } finally {
       setLoading(false);
     }
@@ -106,7 +100,7 @@ export default function LoginPage({ onLogin, onGoToRegister }: Props) {
 
  return (
   <div style={{ ...loginPageStyle, position: "relative" }}>
-    <BackgroundVideo targetName="global" cycle />
+    <SpaceBackground targetName="global" />
     <div style={{ ...loginCardStyle, position: "relative", zIndex: 1 }}>
       <div style={{ marginBottom: "1.75rem" }}>
         <div
@@ -173,18 +167,7 @@ export default function LoginPage({ onLogin, onGoToRegister }: Props) {
         <button
           type="button"
           onClick={onGoToRegister}
-          style={{
-            width: "100%",
-            marginTop: "0.6rem",
-            padding: "0.7rem",
-            borderRadius: 9999,
-            border: "1px solid rgba(148, 163, 184, 0.5)",
-            background: "transparent",
-            color: "#e5e7eb",
-            fontWeight: 600,
-            fontSize: "0.9rem",
-            cursor: "pointer",
-          }}
+          style={{ ...btnSecondary, width: "100%", marginTop: "0.6rem", padding: "0.7rem", fontSize: "0.9rem" }}
         >
           Create an account
         </button>

@@ -1,8 +1,23 @@
 import type React from "react";
 import type { FormEvent } from "react";
 import { useEffect, useMemo, useState } from "react";
+import { isAxiosError } from "axios";
 import api from "./api";
-import BackgroundVideo from "./BackgroundVideo";
+import { SegmentedControl, StarRating } from "./controls";
+import {
+  btnDangerIcon as iconDangerButtonSm,
+  btnPrimary,
+  btnPrimarySm,
+  btnSecondary,
+  btnSecondarySm,
+  card as cardStyle,
+  field as fieldStyle,
+  headerRow as panelHeaderRow,
+  metaLine as metaLineStyle,
+  sectionTitle as sectionTitleStyle,
+} from "./theme";
+import SpaceBackground from "./SpaceBackground";
+import TonightPanel from "./TonightPanel";
 import WeatherIcon from "./WeatherIcon";
 
 interface Props {
@@ -66,26 +81,6 @@ const panelTitleRowStyle: React.CSSProperties = {
   marginBottom: "0.5rem",
 };
 
-const tinyBtnStyle: React.CSSProperties = {
-  borderRadius: 9999,
-  border: "1px solid rgba(148,163,184,0.6)",
-  padding: "0.25rem 0.7rem",
-  background: "transparent",
-  color: "#e5e7eb",
-  fontSize: "0.78rem",
-  cursor: "pointer",
-};
-
-const fieldStyle: React.CSSProperties = {
-  width: "100%",
-  padding: "0.45rem 0.6rem",
-  borderRadius: 10,
-  border: "1px solid #374151",
-  backgroundColor: "#020617",
-  color: "#e5e7eb",
-  fontSize: "0.85rem",
-};
-
 const hintBoxStyle: React.CSSProperties = {
   borderRadius: 14,
   border: "1px dashed rgba(148,163,184,0.35)",
@@ -109,11 +104,6 @@ const appInnerStyle: React.CSSProperties = {
   padding: "2.5rem 1.5rem 3rem",
   display: "grid",
   gap: "1.5rem",
-};
-const metaLineStyle: React.CSSProperties = {
-  fontSize: "0.78rem",
-  color: "#9ca3af",
-  marginTop: "0.15rem",
 };
 const headerRowStyle: React.CSSProperties = {
   display: "flex",
@@ -141,13 +131,6 @@ const statusPillBase: React.CSSProperties = {
   whiteSpace: "nowrap",
 };
 
-const cardStyle: React.CSSProperties = {
-  borderRadius: 16,
-  padding: "1rem 1.25rem",
-  border: "1px solid rgba(148,163,184,0.35)",
-  background: "rgba(15,23,42,0.92)",
-  boxShadow: "0 18px 35px rgba(0,0,0,0.55)",
-};
 const weatherSubtitleStyle: React.CSSProperties = {
   fontSize: "0.78rem",
   color: "#9ca3af",
@@ -171,21 +154,6 @@ const statChipStyle: React.CSSProperties = {
   alignItems: "baseline",
   gap: "0.75rem",
 };
-const panelHeaderRow: React.CSSProperties = {
-  display: "flex",
-  justifyContent: "space-between",
-  alignItems: "center",
-  gap: "0.75rem",
-  marginBottom: "0.6rem",
-};
-
-const chipGrid: React.CSSProperties = {
-  display: "grid",
-  gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))",
-  gap: "0.5rem",
-  alignItems: "start",
-};
-
 const statLabelStyle: React.CSSProperties = {
   fontSize: "0.78rem",
   color: "#9ca3af",
@@ -197,11 +165,6 @@ const statValueStyle: React.CSSProperties = {
   fontWeight: 600,
 };
 
-const sectionTitleStyle: React.CSSProperties = {
-  fontSize: "1rem",
-  fontWeight: 600,
-  marginBottom: "0.75rem",
-};
 type VisibleTarget = {
   name: string;
   kind: "planet" | "moon" | "dso" | "star";
@@ -213,24 +176,6 @@ type VisibleTarget = {
   reason?: string | null;
   score: number;
 };
-const iconDangerButtonSm: React.CSSProperties = {
-  width: 28,
-  height: 28,
-  display: "grid",
-  placeItems: "center",
-  borderRadius: 9,
-  border: "1px solid rgba(248,113,113,0.22)",
-  background: "rgba(248,113,113,0.06)",
-  color: "#fecaca",
-  cursor: "pointer",
-  padding: 0,
-  fontSize: "0.95rem",
-  lineHeight: 1,
-};
-
-
-
-
 const PRESET_TARGETS = [
   "Saturn",
   "Jupiter",
@@ -243,12 +188,72 @@ const PRESET_TARGETS = [
   "Custom",
 ];
 const SESSION_STATUSES = ["planned", "completed", "cancelled"] as const;
+const QUALITY_OPTIONS = ["poor", "fair", "good", "excellent"];
+
+// WMO weather interpretation codes (Open-Meteo `weather_code`) → human text
+const WMO_DESCRIPTIONS: Record<number, string> = {
+  0: "Clear sky",
+  1: "Mainly clear",
+  2: "Partly cloudy",
+  3: "Overcast",
+  45: "Fog",
+  48: "Icy fog",
+  51: "Light drizzle",
+  53: "Drizzle",
+  55: "Heavy drizzle",
+  56: "Freezing drizzle",
+  57: "Freezing drizzle",
+  61: "Light rain",
+  63: "Rain",
+  65: "Heavy rain",
+  66: "Freezing rain",
+  67: "Freezing rain",
+  71: "Light snow",
+  73: "Snow",
+  75: "Heavy snow",
+  77: "Snow grains",
+  80: "Light showers",
+  81: "Showers",
+  82: "Heavy showers",
+  85: "Snow showers",
+  86: "Snow showers",
+  95: "Thunderstorm",
+  96: "Thunderstorm with hail",
+  99: "Thunderstorm with hail",
+};
+
+function fmtCoords(lat?: number | null, lon?: number | null) {
+  if (lat == null || lon == null) return "no coordinates";
+  return `${lat.toFixed(2)}, ${lon.toFixed(2)}`;
+}
+
+// Group hidden targets by a short reason so the hint reads as one line
+// instead of nested parentheses per target
+function summarizeHidden(targets: VisibleTarget[]) {
+  const groups: Record<string, string[]> = {};
+  for (const t of targets) {
+    if (t.visible) continue;
+    const r = (t.reason ?? "").toLowerCase();
+    let label = "not visible";
+    if (r.includes("low")) label = "too low";
+    else if (r.includes("bright")) label = "sky too bright";
+    else if (r.includes("sun")) label = "sun glare";
+    else if (r.includes("not up")) label = "not up yet";
+    (groups[label] ??= []).push(t.name);
+  }
+  return Object.entries(groups)
+    .map(([label, names]) => `${names.join(", ")} (${label})`)
+    .join(" · ");
+}
 export default function Dashboard({ onLogout }: Props) {
   const [locations, setLocations] = useState<Location[]>([]);
   const [sessions, setSessions] = useState<Session[]>([]);
   const [logs, setLogs] = useState<ObservationLog[]>([]);
   const [weather, setWeather] = useState<WeatherInfo | null>(null);
   const [visibleTargets, setVisibleTargets] = useState<VisibleTarget[]>([]);
+  // Which newStart value visibleTargets was fetched for — guards against
+  // validating the target selection against stale visibility data
+  const [targetsForStart, setTargetsForStart] = useState<string | null>(null);
   const [editingSessionId, setEditingSessionId] = useState<number | null>(null);
   const [editTarget, setEditTarget] = useState("");
   const [editCustomTarget, setEditCustomTarget] = useState("");
@@ -271,6 +276,7 @@ export default function Dashboard({ onLogout }: Props) {
   const [error, setError] = useState<string | null>(null);
 
   // New location form state
+  const [showAddLocation, setShowAddLocation] = useState(false);
   const [newLocName, setNewLocName] = useState("");
   const [newLat, setNewLat] = useState("44.0");
   const [newLon, setNewLon] = useState("-79.0");
@@ -353,8 +359,12 @@ export default function Dashboard({ onLogout }: Props) {
 
   function weatherLabel(weather: WeatherInfo | null) {
     if (!weather) return "—";
-    if (weather.description && weather.description.trim()) return weather.description;
-    if (weather.weather_code != null) return `Code ${weather.weather_code}`;
+    if (weather.weather_code != null && WMO_DESCRIPTIONS[weather.weather_code]) {
+      return WMO_DESCRIPTIONS[weather.weather_code];
+    }
+    // Backend sends the placeholder "forecast" as description — not useful
+    const desc = (weather.description ?? "").trim();
+    if (desc && desc !== "forecast") return desc;
     return "—";
   }
   const selectedLocation = locations.find((l) => l.id === selectedLocationId) ?? null;
@@ -408,6 +418,8 @@ export default function Dashboard({ onLogout }: Props) {
         setSessions(sessRes.data);
         if (locRes.data.length > 0) {
           setSelectedLocationId(locRes.data[0].id);
+        } else {
+          setShowAddLocation(true); // first visit: open the form
         }
       } catch (err) {
         console.error(err);
@@ -425,11 +437,25 @@ const tz =
   Intl.DateTimeFormat().resolvedOptions().timeZone ||
   "UTC";
 const hasTime = Boolean(newStart);
+
+// Default the session form to tonight at 10 PM local, so the target
+// list is live immediately instead of showing a dead dropdown
+useEffect(() => {
+  if (selectedLocationId != null && !newStart) {
+    try {
+      const today = new Intl.DateTimeFormat("en-CA", { timeZone: tz }).format(new Date());
+      setNewStart(`${today}T22:00`);
+    } catch {
+      /* invalid tz — leave empty */
+    }
+  }
+}, [selectedLocationId, newStart, tz]);
 const visibleNowCount = visibleTargets.filter((t) => t.visible).length;
 useEffect(() => {
   async function loadTargets() {
     if (!selectedLocationId || !newStart) {
       setVisibleTargets([]);
+      setTargetsForStart(null);
       return;
     }
 
@@ -438,36 +464,40 @@ useEffect(() => {
         params: { location_id: selectedLocationId, when_local: newStart, tz },
       });
       setVisibleTargets(res.data);
-    } catch (e: any) {
+      setTargetsForStart(newStart);
+    } catch (e) {
       console.error(e);
-      const detail =
-        e?.response?.data?.detail ??
-        e?.response?.data ??
-        e?.message ??
-        "Unknown error";
-      setError(`Failed to load targets: ${String(detail)}`); // ✅ show it
+      const detail = isAxiosError(e)
+        ? e.response?.data?.detail ?? e.response?.data ?? e.message
+        : "Unknown error";
+      setError(`Failed to load targets: ${String(detail)}`);
       setVisibleTargets([]);
+      setTargetsForStart(null);
     }
   }
   loadTargets();
 }, [selectedLocationId, newStart, tz]);
   useEffect(() => {
+  // Only validate the selection against visibility data that was actually
+  // fetched for the current start time — otherwise a prefilled target gets
+  // clobbered to "Custom" while the fetch is still in flight
+  if (!newStart || targetsForStart !== newStart) return;
+
   const visible = visibleTargets.filter((t) => t.visible).map((t) => t.name);
 
-  // ✅ If nothing is visible at that time, force the user into Custom
+  // If nothing is visible at that time, force the user into Custom
   if (visible.length === 0) {
     if (newTarget !== "Custom") {
       setNewTarget("Custom");
-      // optional: setCustomTarget("");
     }
     return;
   }
 
-  // ✅ If current selection is no longer valid, pick the first visible
+  // If current selection is no longer valid, pick the first visible
   if (newTarget !== "Custom" && !visible.includes(newTarget)) {
     setNewTarget(visible[0]);
   }
-}, [visibleTargets, newTarget]);
+}, [visibleTargets, newTarget, newStart, targetsForStart]);
 
 
   useEffect(() => {
@@ -501,6 +531,32 @@ useEffect(() => {
     return new Date(hasTz ? s : `${s}Z`);
   }
 
+  // Format a UTC instant as a "YYYY-MM-DDTHH:mm" wall-clock string in the
+  // given timezone — the same timezone the backend will interpret it in on
+  // save. Using browser-local components here would shift the time whenever
+  // the browser and the observing location are in different timezones.
+  function utcIsoToLocalInput(iso: string, timeZone: string) {
+    const d = parseApiDate(iso);
+    try {
+      const parts = new Intl.DateTimeFormat("en-CA", {
+        timeZone,
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: false,
+      }).formatToParts(d);
+      const get = (type: string) => parts.find((p) => p.type === type)?.value ?? "";
+      // hour can be "24" at midnight in some environments; normalize
+      const hour = get("hour") === "24" ? "00" : get("hour");
+      return `${get("year")}-${get("month")}-${get("day")}T${hour}:${get("minute")}`;
+    } catch {
+      const pad = (n: number) => String(n).padStart(2, "0");
+      return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+    }
+  }
+
 const selectedSession = useMemo(
   () => (selectedSessionId != null ? sessions.find(s => s.id === selectedSessionId) ?? null : null),
   [selectedSessionId, sessions]
@@ -517,18 +573,23 @@ useEffect(() => {
 
   (async () => {
     setError(null);
-    try {
-      const [logsRes, weatherRes] = await Promise.all([
-        api.get<ObservationLog[]>(`/sessions/${selectedSessionId}/logs/`),
-        api.get<WeatherInfo>(`/sessions/${selectedSessionId}/weather/`, { params: { tz } }),
-      ]);
 
-      if (cancelled) return;
-      setLogs(logsRes.data);
-      setWeather(weatherRes.data);
+    // Load logs and weather independently: the forecast API only covers
+    // ~16 days out, so a weather failure shouldn't hide the logs.
+    try {
+      const logsRes = await api.get<ObservationLog[]>(`/sessions/${selectedSessionId}/logs/`);
+      if (!cancelled) setLogs(logsRes.data);
     } catch (err) {
       console.error(err);
-      if (!cancelled) setError("Failed to load logs/weather for this session.");
+      if (!cancelled) setError("Failed to load logs for this session.");
+    }
+
+    try {
+      const weatherRes = await api.get<WeatherInfo>(`/sessions/${selectedSessionId}/weather/`);
+      if (!cancelled) setWeather(weatherRes.data);
+    } catch (err) {
+      console.error(err);
+      if (!cancelled) setWeather(null); // panel shows "No weather data."
     }
   })();
 
@@ -580,6 +641,7 @@ useEffect(() => {
       setNewLocName("");
       setNewLocNotes("");
       setNewTimezone("");
+      setShowAddLocation(false);
     } catch (err) {
       console.error(err);
       setError("Failed to create location.");
@@ -643,12 +705,19 @@ useEffect(() => {
 }
 
   // ---------- Session handlers ----------
+
+  function handlePlanFromTonight(targetName: string, whenLocal: string) {
+    setNewStart(whenLocal);
+    setNewTarget(targetName);
+    setCustomTarget("");
+  }
+
   async function handleUpdateSession(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
     if (!editStart) {
       setError("Pick a start time.");
       return;
     }
-    e.preventDefault();
     if (!editingSessionId) return;
 
     setError(null);
@@ -739,7 +808,6 @@ useEffect(() => {
     setError(null);
     try {
       const payload = {
-        session_id: selectedSessionId, 
         notes: newLogNotes,
         seeing: newLogSeeing || null,
         transparency: newLogTransparency || null,
@@ -811,7 +879,7 @@ async function handleDeleteSession(id: number) {
     setError(null);
 
     try {
-      const payload: any = {
+      const payload = {
         notes: editNotes,
         seeing: editSeeing || null,
         transparency: editTransparency || null,
@@ -840,7 +908,7 @@ async function handleDeleteSession(id: number) {
 
   return (
     <div style={{ ...appShellStyle, position: "relative" }}>
-      <BackgroundVideo targetName={backgroundTargetName} />
+      <SpaceBackground targetName={backgroundTargetName} />
       <div style={{ ...appInnerStyle, position: "relative", zIndex: 1 }}>
         <div style={headerRowStyle}>
           <div>
@@ -855,18 +923,7 @@ async function handleDeleteSession(id: number) {
               AstroPlanner
             </h2>
           </div>
-          <button
-            onClick={onLogout}
-            style={{
-              borderRadius: 9999,
-              border: "1px solid rgba(148,163,184,0.5)",
-              background: "rgba(15,23,42,0.9)",
-              color: "#e5e7eb",
-              padding: "0.4rem 0.9rem",
-              fontSize: "0.85rem",
-              cursor: "pointer",
-            }}
-          >
+          <button onClick={onLogout} style={btnSecondary}>
             Logout
           </button>
         </div>
@@ -874,13 +931,32 @@ async function handleDeleteSession(id: number) {
         {loading && <div>Loading…</div>}
         {error && <div style={{ color: "#fca5a5" }}>{error}</div>}
 
+        {/* Tonight at a glance */}
+        {selectedLocationId != null && (
+          <TonightPanel
+            locationId={selectedLocationId}
+            locationName={selectedLocation?.name}
+            tz={tz}
+            onPlan={handlePlanFromTonight}
+          />
+        )}
+
         {/* Locations */}
         <section style={cardStyle}>
-          <h3 style={sectionTitleStyle}>Locations</h3>
-          <div style={{ fontSize: "0.85rem", color: "#9ca3af", marginBottom: "0.6rem" }}>
-            Active timezone: <span style={{ color: "#e5e7eb" }}>{tz}</span>
+          <div style={panelHeaderRow}>
+            <h3 style={{ ...sectionTitleStyle, margin: 0 }}>Locations</h3>
+            <button
+              type="button"
+              onClick={() => setShowAddLocation((v) => !v)}
+              style={{
+                ...btnSecondarySm,
+                background: showAddLocation ? "rgba(59,130,246,0.15)" : "transparent",
+              }}
+            >
+              {showAddLocation ? "Close" : "+ Add location"}
+            </button>
           </div>
-          <div style={{ display: "flex", gap: "1rem" }}>
+          <div style={{ display: "flex", gap: "1rem", flexWrap: "wrap" }}>
             <div style={locationLeftColStyle}>
               {/* Location list */}
               <ul style={{ listStyle: "none", paddingLeft: 0, margin: 0 }}>
@@ -916,11 +992,8 @@ async function handleDeleteSession(id: number) {
                     onClick={() => setSelectedLocationId(loc.id)}
                   >
                     <strong>{loc.name}</strong>
-                    <div style={{ display: "grid", gap: "0.1rem" }}>
-                      <span style={{ fontSize: "0.8rem", color: "#9ca3af" }}>
-                        ({loc.latitude}, {loc.longitude})
-                      </span>
-                      <span style={metaLineStyle}>TZ: {loc.timezone ?? "not set"}</span>
+                    <div style={{ fontSize: "0.8rem", color: "#9ca3af", marginTop: "0.1rem" }}>
+                      {fmtCoords(loc.latitude, loc.longitude)} · {loc.timezone ?? "no timezone"}
                     </div>
                   </button>
 
@@ -959,16 +1032,20 @@ async function handleDeleteSession(id: number) {
               <div style={locationPanelStyle}>
                 <div style={panelTitleRowStyle}>
                   <div>
-                    <div style={{ fontSize: "0.9rem", fontWeight: 700 }}>Selected location</div>
+                    <div style={{ fontSize: "0.9rem", fontWeight: 700 }}>
+                      {selectedLocation?.name ?? "Selected location"}
+                    </div>
                     <div style={metaLineStyle}>
-                      {selectedLocation?.name ?? "—"} · ({selectedLocation?.latitude}, {selectedLocation?.longitude})
+                      {selectedLocation
+                        ? fmtCoords(selectedLocation.latitude, selectedLocation.longitude)
+                        : "—"}
                     </div>
                   </div>
 
                   <button
                     type="button"
                     onClick={() => setEditingLoc((v) => !v)}
-                    style={tinyBtnStyle}
+                    style={btnSecondarySm}
                   >
                     {editingLoc ? "Close" : "Edit"}
                   </button>
@@ -1012,15 +1089,7 @@ async function handleDeleteSession(id: number) {
                     </label>
 
                     <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
-                      <button
-                        type="submit"
-                        disabled={locSaving}
-                        style={{
-                          ...tinyBtnStyle,
-                          border: "none",
-                          background: "linear-gradient(135deg,#38bdf8,#6366f1)",
-                        }}
-                      >
+                      <button type="submit" disabled={locSaving} style={btnPrimarySm}>
                         {locSaving ? "Saving..." : "Save"}
                       </button>
 
@@ -1031,7 +1100,7 @@ async function handleDeleteSession(id: number) {
                           setLocNotesDraft(selectedLocation?.notes ?? "");
                           setEditingLoc(false);
                         }}
-                        style={tinyBtnStyle}
+                        style={btnSecondarySm}
                       >
                         Cancel
                       </button>
@@ -1041,6 +1110,7 @@ async function handleDeleteSession(id: number) {
               </div>
             )}
           </div>
+            {showAddLocation && (
             <form onSubmit={handleCreateLocation} style={{ minWidth: 260 }}>
               <h4 style={{ fontSize: "0.95rem", marginBottom: "0.5rem" }}>
                 New Location
@@ -1059,33 +1129,14 @@ async function handleDeleteSession(id: number) {
                     placeholder="e.g. Toronto, Ontario"
                     value={geocodeQuery}
                     onChange={(e) => setGeocodeQuery(e.target.value)}
-                    style={{
-                      width: "100%",
-                      padding: "0.5rem 0.6rem",
-                      borderRadius: 9999,
-                      border: "1px solid #374151",
-                      backgroundColor: "#020617",
-                      color: "#e5e7eb",
-                      fontSize: "0.85rem",
-                      marginTop: "0.25rem",
-                    }}
+                    style={{ ...fieldStyle, marginTop: "0.25rem" }}
                   />
                 </label>
                 <button
                   type="button"
                   onClick={handleGeocode}
                   disabled={geocodeLoading}
-                  style={{
-                    marginTop: "0.25rem",
-                    padding: "0.35rem 0.7rem",
-                    borderRadius: 9999,
-                    border: "none",
-                    background:
-                      "linear-gradient(135deg,#38bdf8,#6366f1,#a855f7)",
-                    color: "white",
-                    fontSize: "0.8rem",
-                    cursor: "pointer",
-                  }}
+                  style={{ ...btnSecondarySm, marginTop: "0.25rem" }}
                 >
                   {geocodeLoading ? "Looking up..." : "Autofill coordinates"}
                 </button>
@@ -1103,16 +1154,7 @@ async function handleDeleteSession(id: number) {
                   <input
                     value={newLocName}
                     onChange={(e) => setNewLocName(e.target.value)}
-                    style={{
-                      width: "100%",
-                      padding: "0.45rem 0.6rem",
-                      borderRadius: 10,
-                      border: "1px solid #374151",
-                      backgroundColor: "#020617",
-                      color: "#e5e7eb",
-                      fontSize: "0.85rem",
-                      marginTop: "0.2rem",
-                    }}
+                    style={{ ...fieldStyle, marginTop: "0.2rem" }}
                   />
                 </label>
               </div>
@@ -1128,16 +1170,7 @@ async function handleDeleteSession(id: number) {
                   <input
                     value={newLat}
                     onChange={(e) => setNewLat(e.target.value)}
-                    style={{
-                      width: "100%",
-                      padding: "0.45rem 0.6rem",
-                      borderRadius: 10,
-                      border: "1px solid #374151",
-                      backgroundColor: "#020617",
-                      color: "#e5e7eb",
-                      fontSize: "0.85rem",
-                      marginTop: "0.2rem",
-                    }}
+                    style={{ ...fieldStyle, marginTop: "0.2rem" }}
                   />
                 </label>
               </div>
@@ -1153,16 +1186,7 @@ async function handleDeleteSession(id: number) {
                   <input
                     value={newLon}
                     onChange={(e) => setNewLon(e.target.value)}
-                    style={{
-                      width: "100%",
-                      padding: "0.45rem 0.6rem",
-                      borderRadius: 10,
-                      border: "1px solid #374151",
-                      backgroundColor: "#020617",
-                      color: "#e5e7eb",
-                      fontSize: "0.85rem",
-                      marginTop: "0.2rem",
-                    }}
+                    style={{ ...fieldStyle, marginTop: "0.2rem" }}
                   />
                 </label>
               </div>
@@ -1173,16 +1197,7 @@ async function handleDeleteSession(id: number) {
                     value={newTimezone}
                     onChange={(e) => setNewTimezone(e.target.value)}
                     placeholder="e.g. America/Toronto"
-                    style={{
-                      width: "100%",
-                      padding: "0.45rem 0.6rem",
-                      borderRadius: 10,
-                      border: "1px solid #374151",
-                      backgroundColor: "#020617",
-                      color: "#e5e7eb",
-                      fontSize: "0.85rem",
-                      marginTop: "0.2rem",
-                    }}
+                    style={{ ...fieldStyle, marginTop: "0.2rem" }}
                   />
                 </label>
                 <div style={metaLineStyle}>
@@ -1201,67 +1216,42 @@ async function handleDeleteSession(id: number) {
                   <input
                     value={newLocNotes}
                     onChange={(e) => setNewLocNotes(e.target.value)}
-                    style={{
-                      width: "100%",
-                      padding: "0.45rem 0.6rem",
-                      borderRadius: 10,
-                      border: "1px solid #374151",
-                      backgroundColor: "#020617",
-                      color: "#e5e7eb",
-                      fontSize: "0.85rem",
-                      marginTop: "0.2rem",
-                    }}
+                    style={{ ...fieldStyle, marginTop: "0.2rem" }}
                   />
                 </label>
               </div>
-              <button
-                type="submit"
-                style={{
-                  marginTop: "0.6rem",
-                  padding: "0.5rem 0.9rem",
-                  borderRadius: 9999,
-                  border: "none",
-                  background:
-                    "linear-gradient(135deg,#22c55e,#4ade80,#a3e635)",
-                  color: "#052e16",
-                  fontWeight: 600,
-                  fontSize: "0.85rem",
-                  cursor: "pointer",
-                }}
-              >
+              <button type="submit" style={{ ...btnPrimary, marginTop: "0.6rem" }}>
                 Add Location
               </button>
             </form>
+            )}
           </div>
         </section>
 
         {/* Sessions */}
         <section style={cardStyle}>
-          <h3 style={sectionTitleStyle}>Sessions</h3>
-          <button
-            type="button"
-            onClick={handleExportIcs}
-            disabled={!selectedLocationId || filteredSessions.length === 0}
-            style={{
-              borderRadius: 9999,
-              border: "1px solid rgba(148,163,184,0.6)",
-              padding: "0.35rem 0.8rem",
-              background: "rgba(15,23,42,0.6)",
-              color: "#e5e7eb",
-              fontSize: "0.85rem",
-              cursor: (!selectedLocationId || filteredSessions.length === 0) ? "not-allowed" : "pointer",
-              opacity: (!selectedLocationId || filteredSessions.length === 0) ? 0.5 : 1,
-            }}
-            title={
-              !selectedLocationId
-                ? "Select a location to export"
-                : filteredSessions.length === 0
-                ? "No sessions to export"
-                : "Export planned sessions as .ics"
-            }
-          >
-            Export .ics
-          </button>
+          <div style={panelHeaderRow}>
+            <h3 style={{ ...sectionTitleStyle, margin: 0 }}>Sessions</h3>
+            <button
+              type="button"
+              onClick={handleExportIcs}
+              disabled={!selectedLocationId || filteredSessions.length === 0}
+              style={{
+                ...btnSecondarySm,
+                cursor: (!selectedLocationId || filteredSessions.length === 0) ? "not-allowed" : "pointer",
+                opacity: (!selectedLocationId || filteredSessions.length === 0) ? 0.5 : 1,
+              }}
+              title={
+                !selectedLocationId
+                  ? "Select a location to export"
+                  : filteredSessions.length === 0
+                  ? "No sessions to export"
+                  : "Export planned sessions as .ics"
+              }
+            >
+              Export .ics
+            </button>
+          </div>
           <div
             style={{
               display: "flex",
@@ -1293,16 +1283,7 @@ async function handleDeleteSession(id: number) {
                           <select
                             value={editTarget}
                             onChange={(e) => setEditTarget(e.target.value)}
-                            style={{
-                              width: "100%",
-                              padding: "0.35rem 0.5rem",
-                              borderRadius: 10,
-                              border: "1px solid #374151",
-                              backgroundColor: "#020617",
-                              color: "#e5e7eb",
-                              fontSize: "0.85rem",
-                              marginTop: "0.2rem",
-                            }}
+                            style={{ ...fieldStyle, marginTop: "0.2rem" }}
                           >
                             {editVisibleTargets
                               .filter((t) => t.visible)
@@ -1315,8 +1296,7 @@ async function handleDeleteSession(id: number) {
                           </select>
                           {editVisibleTargets.some(t => !t.visible) && (
                             <div style={{ fontSize: "0.8rem", color: "#9ca3af", marginTop: "0.4rem" }}>
-                              Not visible now:{" "}
-                              {editVisibleTargets.filter(t => !t.visible).slice(0, 3).map(t => `${t.name} (${t.reason})`).join(", ")}
+                              Not visible: {summarizeHidden(editVisibleTargets)}
                             </div>
                           )}
                         </label>
@@ -1326,16 +1306,7 @@ async function handleDeleteSession(id: number) {
                           <select
                             value={editStatus}
                             onChange={(e) => setEditStatus(e.target.value)}
-                            style={{
-                              width: "100%",
-                              padding: "0.35rem 0.5rem",
-                              borderRadius: 10,
-                              border: "1px solid #374151",
-                              backgroundColor: "#020617",
-                              color: "#e5e7eb",
-                              fontSize: "0.85rem",
-                              marginTop: "0.2rem",
-                            }}
+                            style={{ ...fieldStyle, marginTop: "0.2rem" }}
                           >
                             {SESSION_STATUSES.map((st) => (
                               <option key={st} value={st}>
@@ -1352,16 +1323,7 @@ async function handleDeleteSession(id: number) {
                           <input
                             value={editCustomTarget}
                             onChange={(e) => setEditCustomTarget(e.target.value)}
-                            style={{
-                              width: "100%",
-                              marginTop: "0.2rem",
-                              padding: "0.35rem 0.5rem",
-                              borderRadius: 10,
-                              border: "1px solid #374151",
-                              backgroundColor: "#020617",
-                              color: "#e5e7eb",
-                              fontSize: "0.85rem",
-                            }}
+                            style={{ ...fieldStyle, marginTop: "0.2rem" }}
                           />
                         </label>
                       )}
@@ -1375,46 +1337,18 @@ async function handleDeleteSession(id: number) {
                           onPointerDown={(e) =>
                             (e.currentTarget as HTMLInputElement).showPicker?.()
                           }
-                          style={{
-                            width: "100%",
-                            marginTop: "0.2rem",
-                            padding: "0.35rem 0.5rem",
-                            borderRadius: 10,
-                            border: "1px solid #374151",
-                            backgroundColor: "#020617",
-                            color: "#e5e7eb",
-                            fontSize: "0.85rem",
-                          }}
+                          style={{ ...fieldStyle, marginTop: "0.2rem" }}
                         />
                       </label>
 
                       <div style={{ display: "flex", gap: "0.5rem" }}>
-                        <button
-                          type="submit"
-                          style={{
-                            borderRadius: 9999,
-                            border: "none",
-                            padding: "0.3rem 0.75rem",
-                            background: "linear-gradient(135deg,#38bdf8,#6366f1)",
-                            color: "white",
-                            fontSize: "0.8rem",
-                            cursor: "pointer",
-                          }}
-                        >
+                        <button type="submit" style={btnPrimarySm}>
                           Save
                         </button>
                         <button
                           type="button"
                           onClick={() => setEditingSessionId(null)}
-                          style={{
-                            borderRadius: 9999,
-                            border: "1px solid rgba(148,163,184,0.6)",
-                            padding: "0.3rem 0.75rem",
-                            background: "transparent",
-                            color: "#e5e7eb",
-                            fontSize: "0.8rem",
-                            cursor: "pointer",
-                          }}
+                          style={btnSecondarySm}
                         >
                           Cancel
                         </button>
@@ -1467,22 +1401,9 @@ async function handleDeleteSession(id: number) {
                             setEditTarget(isPreset ? s.target_name : "Custom");
                             setEditCustomTarget(isPreset ? "" : s.target_name);
 
-                            const d = parseApiDate(s.scheduled_start);
-                            const pad = (n: number) => String(n).padStart(2, "0");
-                            const local = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(
-                              d.getHours(),
-                            )}:${pad(d.getMinutes())}`;
-                            setEditStart(local);
+                            setEditStart(utcIsoToLocalInput(s.scheduled_start, tz));
                           }}
-                          style={{
-                            fontSize: "0.75rem",
-                            borderRadius: 9999,
-                            border: "1px solid rgba(148,163,184,0.6)",
-                            padding: "0.1rem 0.55rem",
-                            background: "transparent",
-                            color: "#e5e7eb",
-                            cursor: "pointer",
-                          }}
+                          style={btnSecondarySm}
                         >
                           Edit
                         </button>
@@ -1535,16 +1456,7 @@ async function handleDeleteSession(id: number) {
                     value={newStart}
                     onChange={(e) => setNewStart(e.target.value)}
                     onClick={(e) => (e.currentTarget as HTMLInputElement).showPicker?.()}
-                    style={{
-                      width: "100%",
-                      padding: "0.45rem 0.6rem",
-                      borderRadius: 10,
-                      border: "1px solid #374151",
-                      backgroundColor: "#020617",
-                      color: "#e5e7eb",
-                      fontSize: "0.85rem",
-                      marginTop: "0.2rem",
-                    }}
+                    style={{ ...fieldStyle, marginTop: "0.2rem" }}
                   />
                 </label>
               </div>
@@ -1562,13 +1474,7 @@ async function handleDeleteSession(id: number) {
                     onChange={(e) => setNewTarget(e.target.value)}
                     disabled={!hasTime}
                     style={{
-                      width: "100%",
-                      padding: "0.45rem 0.6rem",
-                      borderRadius: 10,
-                      border: "1px solid #374151",
-                      backgroundColor: "#020617",
-                      color: "#e5e7eb",
-                      fontSize: "0.85rem",
+                      ...fieldStyle,
                       marginTop: "0.2rem",
                       opacity: !hasTime ? 0.6 : 1,
                       cursor: !hasTime ? "not-allowed" : "pointer",
@@ -1602,8 +1508,7 @@ async function handleDeleteSession(id: number) {
                           overflowWrap: "anywhere",
                         }}
                       >
-                        Not visible now:{" "}
-                        {visibleTargets.filter(t => !t.visible).slice(0, 3).map(t => `${t.name} (${t.reason})`).join(", ")}
+                        Not visible: {summarizeHidden(visibleTargets)}
                       </div>
                     )}
                 </label>
@@ -1622,37 +1527,14 @@ async function handleDeleteSession(id: number) {
                     <input
                       value={customTarget}
                       onChange={(e) => setCustomTarget(e.target.value)}
-                      style={{
-                        width: "100%",
-                        padding: "0.45rem 0.6rem",
-                        borderRadius: 10,
-                        border: "1px solid #374151",
-                        backgroundColor: "#020617",
-                        color: "#e5e7eb",
-                        fontSize: "0.85rem",
-                        marginTop: "0.2rem",
-                      }}
+                      style={{ ...fieldStyle, marginTop: "0.2rem" }}
                     />
                   </label>
                 </div>
               )}
 
               
-              <button
-                type="submit"
-                style={{
-                  marginTop: "0.6rem",
-                  padding: "0.5rem 0.9rem",
-                  borderRadius: 9999,
-                  border: "none",
-                  background:
-                    "linear-gradient(135deg,#38bdf8,#6366f1,#a855f7)",
-                  color: "white",
-                  fontWeight: 600,
-                  fontSize: "0.85rem",
-                  cursor: "pointer",
-                }}
-              >
+              <button type="submit" style={{ ...btnPrimary, marginTop: "0.6rem" }}>
                 Add Session
               </button>
             </form>
@@ -1663,7 +1545,13 @@ async function handleDeleteSession(id: number) {
         {selectedSessionId && (
           <section style={cardStyle}>
             <h3 style={sectionTitleStyle}>
-              Session Details (#{selectedSessionId})
+              {selectedSession?.target_name ?? "Session details"}
+              {selectedSession && (
+                <span style={{ color: "#9ca3af", fontWeight: 400 }}>
+                  {" "}
+                  · {formatSessionTime(selectedSession.scheduled_start, tz)}
+                </span>
+              )}
             </h3>
             <div
               style={{
@@ -1722,8 +1610,7 @@ async function handleDeleteSession(id: number) {
                           </div>
                         </div>
                         <div style={{ fontSize: "0.8rem", color: "#9ca3af" }}>
-                          {weather.is_day == null ? "—" : weather.is_day ? "Day" : "Night"}
-                          {weather.weather_code != null ? ` · Code ${weather.weather_code}` : ""}
+                          {weather.is_day == null ? "" : weather.is_day ? "Daytime" : "Night"}
                         </div>
                       </div>
                     </div>
@@ -1742,20 +1629,6 @@ async function handleDeleteSession(id: number) {
                         <span style={statLabelStyle}>Cloud cover</span>
                         <span style={statValueStyle}>
                           {weather.cloud_cover == null ? "—" : `${Math.round(weather.cloud_cover)}%`}
-                        </span>
-                      </div>
-
-                      <div style={statChipStyle}>
-                        <span style={statLabelStyle}>Temp (raw)</span>
-                        <span style={statValueStyle}>
-                          {weather.temperature == null ? "—" : `${weather.temperature.toFixed(1)}°C`}
-                        </span>
-                      </div>
-
-                      <div style={statChipStyle}>
-                        <span style={statLabelStyle}>Day/Night</span>
-                        <span style={statValueStyle}>
-                          {weather.is_day == null ? "—" : weather.is_day ? "Day" : "Night"}
                         </span>
                       </div>
                     </div>
@@ -1784,13 +1657,8 @@ async function handleDeleteSession(id: number) {
                     type="button"
                     onClick={() => setShowAddLog(v => !v)}
                     style={{
-                      borderRadius: 9999,
-                      border: "1px solid rgba(148,163,184,0.6)",
-                      padding: "0.3rem 0.75rem",
+                      ...btnSecondarySm,
                       background: showAddLog ? "rgba(59,130,246,0.15)" : "transparent",
-                      color: "#e5e7eb",
-                      fontSize: "0.8rem",
-                      cursor: "pointer",
                     }}
                   >
                     {showAddLog ? "Close" : "+ Add log"}
@@ -1818,54 +1686,35 @@ async function handleDeleteSession(id: number) {
                       />
                     </label>
 
-                    <div style={{ ...chipGrid, marginTop: "0.5rem" }}>
-                      <label style={{ fontSize: "0.8rem" }}>
-                        Seeing
-                        <input
-                          value={newLogSeeing}
-                          onChange={(e) => setNewLogSeeing(e.target.value)}
-                          placeholder="e.g. 3/5"
-                          style={{ ...fieldStyle, marginTop: "0.25rem" }}
+                    <div style={{ display: "grid", gap: "0.6rem", marginTop: "0.6rem" }}>
+                      <div style={{ fontSize: "0.8rem" }}>
+                        <div style={{ marginBottom: "0.3rem" }}>Seeing</div>
+                        <SegmentedControl
+                          options={QUALITY_OPTIONS}
+                          value={newLogSeeing || null}
+                          onChange={(v) => setNewLogSeeing(v ?? "")}
                         />
-                      </label>
+                      </div>
 
-                      <label style={{ fontSize: "0.8rem" }}>
-                        Transparency
-                        <input
-                          value={newLogTransparency}
-                          onChange={(e) => setNewLogTransparency(e.target.value)}
-                          placeholder="e.g. average"
-                          style={{ ...fieldStyle, marginTop: "0.25rem" }}
+                      <div style={{ fontSize: "0.8rem" }}>
+                        <div style={{ marginBottom: "0.3rem" }}>Transparency</div>
+                        <SegmentedControl
+                          options={QUALITY_OPTIONS}
+                          value={newLogTransparency || null}
+                          onChange={(v) => setNewLogTransparency(v ?? "")}
                         />
-                      </label>
+                      </div>
 
-                      <label style={{ fontSize: "0.8rem" }}>
-                        Rating
-                        <input
-                          type="number"
-                          min={1}
-                          max={5}
-                          value={newLogRating}
-                          onChange={(e) => setNewLogRating(e.target.value === "" ? "" : Number(e.target.value))}
-                          style={{ ...fieldStyle, marginTop: "0.25rem" }}
+                      <div style={{ fontSize: "0.8rem" }}>
+                        <div style={{ marginBottom: "0.3rem" }}>Rating</div>
+                        <StarRating
+                          value={newLogRating === "" ? null : newLogRating}
+                          onChange={(v) => setNewLogRating(v ?? "")}
                         />
-                      </label>
+                      </div>
                     </div>
 
-                    <button
-                      type="submit"
-                      style={{
-                        marginTop: "0.6rem",
-                        padding: "0.4rem 0.85rem",
-                        borderRadius: 9999,
-                        border: "none",
-                        background: "linear-gradient(135deg,#22c55e,#4ade80,#a3e635)",
-                        color: "#052e16",
-                        fontWeight: 700,
-                        fontSize: "0.8rem",
-                        cursor: "pointer",
-                      }}
-                    >
+                    <button type="submit" style={{ ...btnPrimarySm, marginTop: "0.6rem" }}>
                       Add Log
                     </button>
                   </form>
@@ -1914,68 +1763,53 @@ async function handleDeleteSession(id: number) {
                               />
                             </label>
 
-                            <div style={chipGrid}>
-                              <label style={{ fontSize: "0.8rem" }}>
-                                Seeing
-                                <input
-                                  value={editSeeing}
-                                  onChange={(e) => setEditSeeing(e.target.value)}
-                                  style={{ ...fieldStyle, marginTop: "0.25rem" }}
+                            <div style={{ display: "grid", gap: "0.6rem" }}>
+                              <div style={{ fontSize: "0.8rem" }}>
+                                <div style={{ marginBottom: "0.3rem" }}>Seeing</div>
+                                <SegmentedControl
+                                  options={QUALITY_OPTIONS}
+                                  value={editSeeing || null}
+                                  onChange={(v) => setEditSeeing(v ?? "")}
                                 />
-                              </label>
+                                {editSeeing && !QUALITY_OPTIONS.includes(editSeeing.toLowerCase()) && (
+                                  <div style={{ fontSize: "0.75rem", color: "#9ca3af", marginTop: "0.25rem" }}>
+                                    Keeping the earlier value “{editSeeing}” until you pick one.
+                                  </div>
+                                )}
+                              </div>
 
-                              <label style={{ fontSize: "0.8rem" }}>
-                                Transparency
-                                <input
-                                  value={editTransparency}
-                                  onChange={(e) => setEditTransparency(e.target.value)}
-                                  style={{ ...fieldStyle, marginTop: "0.25rem" }}
+                              <div style={{ fontSize: "0.8rem" }}>
+                                <div style={{ marginBottom: "0.3rem" }}>Transparency</div>
+                                <SegmentedControl
+                                  options={QUALITY_OPTIONS}
+                                  value={editTransparency || null}
+                                  onChange={(v) => setEditTransparency(v ?? "")}
                                 />
-                              </label>
+                                {editTransparency && !QUALITY_OPTIONS.includes(editTransparency.toLowerCase()) && (
+                                  <div style={{ fontSize: "0.75rem", color: "#9ca3af", marginTop: "0.25rem" }}>
+                                    Keeping the earlier value “{editTransparency}” until you pick one.
+                                  </div>
+                                )}
+                              </div>
 
-                              <label style={{ fontSize: "0.8rem" }}>
-                                Rating
-                                <input
-                                  type="number"
-                                  min={1}
-                                  max={5}
-                                  value={editRating}
-                                  onChange={(e) =>
-                                    setEditRating(e.target.value === "" ? "" : Number(e.target.value))
-                                  }
-                                  style={{ ...fieldStyle, marginTop: "0.25rem" }}
+                              <div style={{ fontSize: "0.8rem" }}>
+                                <div style={{ marginBottom: "0.3rem" }}>Rating</div>
+                                <StarRating
+                                  value={editRating === "" ? null : editRating}
+                                  onChange={(v) => setEditRating(v ?? "")}
                                 />
-                              </label>
+                              </div>
                             </div>
 
                             <div style={{ display: "flex", gap: "0.5rem" }}>
-                              <button
-                                type="submit"
-                                style={{
-                                  borderRadius: 9999,
-                                  border: "none",
-                                  padding: "0.35rem 0.85rem",
-                                  background: "linear-gradient(135deg,#38bdf8,#6366f1)",
-                                  color: "white",
-                                  fontSize: "0.8rem",
-                                  cursor: "pointer",
-                                }}
-                              >
+                              <button type="submit" style={btnPrimarySm}>
                                 Save
                               </button>
 
                               <button
                                 type="button"
                                 onClick={() => setEditingLogId(null)}
-                                style={{
-                                  borderRadius: 9999,
-                                  border: "1px solid rgba(148,163,184,0.6)",
-                                  padding: "0.35rem 0.85rem",
-                                  background: "transparent",
-                                  color: "#e5e7eb",
-                                  fontSize: "0.8rem",
-                                  cursor: "pointer",
-                                }}
+                                style={btnSecondarySm}
                               >
                                 Cancel
                               </button>
@@ -1991,15 +1825,19 @@ async function handleDeleteSession(id: number) {
                             <div style={statGridStyle}>
                               <div style={statChipStyle}>
                                 <span style={statLabelStyle}>Seeing</span>
-                                <span style={statValueStyle}>{log.seeing ?? "—"}</span>
+                                <span style={{ ...statValueStyle, textTransform: "capitalize" }}>
+                                  {log.seeing ?? "—"}
+                                </span>
                               </div>
                               <div style={statChipStyle}>
                                 <span style={statLabelStyle}>Transparency</span>
-                                <span style={statValueStyle}>{log.transparency ?? "—"}</span>
+                                <span style={{ ...statValueStyle, textTransform: "capitalize" }}>
+                                  {log.transparency ?? "—"}
+                                </span>
                               </div>
                               <div style={statChipStyle}>
                                 <span style={statLabelStyle}>Rating</span>
-                                <span style={statValueStyle}>{log.rating ?? "—"}</span>
+                                <StarRating value={log.rating ?? null} readOnly size="0.95rem" />
                               </div>
                             </div>
 
@@ -2012,16 +1850,7 @@ async function handleDeleteSession(id: number) {
                                 setEditTransparency(log.transparency ?? "");
                                 setEditRating(log.rating ?? "");
                               }}
-                              style={{
-                                marginTop: "0.6rem",
-                                borderRadius: 9999,
-                                border: "1px solid rgba(148,163,184,0.6)",
-                                padding: "0.3rem 0.75rem",
-                                background: "transparent",
-                                color: "#e5e7eb",
-                                fontSize: "0.8rem",
-                                cursor: "pointer",
-                              }}
+                              style={{ ...btnSecondarySm, marginTop: "0.6rem" }}
                             >
                               Edit
                             </button>

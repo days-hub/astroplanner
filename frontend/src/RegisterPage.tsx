@@ -1,6 +1,7 @@
 import type { FormEvent } from "react";
 import { useState } from "react";
-import api, { setAuthToken } from "./api";
+import api, { apiErrorMessage, setAuthToken } from "./api";
+import { btnPrimary, btnSecondary } from "./theme";
 
 const registerPageStyle: React.CSSProperties = {
   minHeight: "100vh",
@@ -57,31 +58,19 @@ const inputStyle: React.CSSProperties = {
 };
 
 const primaryButtonStyle: React.CSSProperties = {
+  ...btnPrimary,
   width: "100%",
   marginTop: "1rem",
   padding: "0.75rem",
-  borderRadius: 9999,
-  border: "none",
-  background:
-    "linear-gradient(135deg, #22c55e 0%, #4ade80 45%, #a3e635 100%)",
-  color: "#052e16",
-  fontWeight: 800,
   fontSize: "0.95rem",
-  cursor: "pointer",
-  boxShadow: "0 10px 25px rgba(34,197,94,0.22)",
 };
 
 const secondaryButtonStyle: React.CSSProperties = {
+  ...btnSecondary,
   width: "100%",
   marginTop: "0.6rem",
   padding: "0.7rem",
-  borderRadius: 9999,
-  border: "1px solid rgba(148, 163, 184, 0.5)",
-  background: "transparent",
-  color: "#e5e7eb",
-  fontWeight: 600,
   fontSize: "0.9rem",
-  cursor: "pointer",
 };
 
 type RegisterResponse = {
@@ -131,13 +120,11 @@ export default function RegisterPage({ onRegisteredAndLoggedIn, onGoToLogin }: P
       const token = loginRes.data.access_token as string;
       setAuthToken(token);
       onRegisteredAndLoggedIn(token);
-    } catch (err: any) {
+    } catch (err) {
       console.error(err);
-      // if FastAPI returns detail, show it
-      const msg =
-        err?.response?.data?.detail ??
-        "Registration failed. That email might already be in use.";
-      setError(String(msg));
+      setError(
+        apiErrorMessage(err, "Registration failed. That email might already be in use."),
+      );
     } finally {
       setLoading(false);
     }

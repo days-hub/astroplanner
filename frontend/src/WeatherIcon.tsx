@@ -1,5 +1,3 @@
-import React from "react";
-
 // Meteocons (filled). These SVGs are animated.
 import clearDay from "@bybas/weather-icons/production/fill/all/clear-day.svg?url";
 import clearNight from "@bybas/weather-icons/production/fill/all/clear-night.svg?url";

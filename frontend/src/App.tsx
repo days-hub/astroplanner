@@ -2,21 +2,24 @@ import { useEffect, useState } from "react";
 import LoginPage from "./LoginPage";
 import RegisterPage from "./RegisterPage";
 import Dashboard from "./Dashboard";
-import { setAuthToken } from "./api";
+import { getStoredToken, setAuthToken, setOnUnauthorized } from "./api";
 
 type Page = "login" | "register";
 
 function App() {
-  const [token, setToken] = useState<string | null>(() => localStorage.getItem("token"));
+  const [token, setToken] = useState<string | null>(() => getStoredToken());
   const [page, setPage] = useState<Page>("login");
 
+  // If the API rejects our token (expired/invalid), fall back to login
   useEffect(() => {
-    setAuthToken(token);
-    if (token) localStorage.setItem("token", token);
-    else localStorage.removeItem("token");
-  }, [token]);
+    setOnUnauthorized(() => setToken(null));
+    return () => setOnUnauthorized(null);
+  }, []);
 
-  const handleLogout = () => setToken(null);
+  const handleLogout = () => {
+    setAuthToken(null);
+    setToken(null);
+  };
 
   if (token) return <Dashboard onLogout={handleLogout} />;
 
