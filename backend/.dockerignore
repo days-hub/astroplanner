@@ -1,0 +1,9 @@
+.venv/
+__pycache__/
+*.pyc
+*.db
+.env
+.env.*
+de421.bsp
+tests/
+.pytest_cache/

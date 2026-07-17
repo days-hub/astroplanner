@@ -1,0 +1,6 @@
+node_modules/
+dist/
+.env
+.env.*
+# Legacy raw footage, if still present locally — never build-context material
+public/videos/
