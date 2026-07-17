@@ -10,7 +10,8 @@ class ObservationLogBase(BaseModel):
 
 
 class ObservationLogCreate(ObservationLogBase):
-    session_id: int
+    # session_id comes from the URL path, not the body
+    pass
 
 
 class ObservationLogUpdate(BaseModel):
@@ -24,4 +25,4 @@ class ObservationLogRead(ObservationLogBase):
     id: int
 
     class Config:
-        orm_mode = True
+        from_attributes = True

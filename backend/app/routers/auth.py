@@ -1,7 +1,8 @@
 from datetime import timedelta
 
-from fastapi import APIRouter, Depends, HTTPException, status, Response
+from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordRequestForm
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.core import deps
@@ -16,7 +17,9 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 
 @router.post("/register", response_model=UserRead, status_code=status.HTTP_201_CREATED)
 def register_user(user_in: UserCreate, db: Session = Depends(get_db)):
-    existing = db.query(User).filter(User.email == user_in.email).first()
+    # Store lowercase so lookups are case-insensitive
+    email = user_in.email.strip().lower()
+    existing = db.query(User).filter(func.lower(User.email) == email).first()
     if existing:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -24,7 +27,7 @@ def register_user(user_in: UserCreate, db: Session = Depends(get_db)):
         )
 
     user = User(
-        email=user_in.email,
+        email=email,
         hashed_password=get_password_hash(user_in.password),
     )
     db.add(user)
@@ -35,7 +38,6 @@ def register_user(user_in: UserCreate, db: Session = Depends(get_db)):
 
 @router.post("/login", response_model=Token)
 def login_for_access_token(
-    response: Response,
     form_data: OAuth2PasswordRequestForm = Depends(),
     db: Session = Depends(get_db),
 ):
@@ -60,11 +62,6 @@ def login_for_access_token(
 
 
     return Token(access_token=access_token, token_type="bearer")
-
-@router.post("/logout")
-def logout(response: Response):
-    response.delete_cookie("access_token")
-    return {"ok": True}
 
 @router.get("/me", response_model=UserRead)
 def read_current_user(current_user: User = Depends(deps.get_current_user)):

@@ -7,14 +7,10 @@ from fastapi import APIRouter, Depends, Query
 from fastapi.responses import Response
 from sqlalchemy.orm import Session as DbSession
 
-from app.core.deps import get_db
+from app.core.deps import get_current_user, get_db
 from app.models.observation_session import ObservationSession
 from app.models.location import Location
-
-# OPTIONAL: if your app requires auth on most routes, import your auth dependency
-# Example names (adjust to your project):
-# from app.core.security import get_current_user
-# from app.models.user import User
+from app.models.user import User
 
 router = APIRouter(prefix="/planner", tags=["planner"])
 
@@ -46,10 +42,11 @@ def export_ics(
     start_to: Optional[datetime] = Query(default=None),
     duration_minutes: int = Query(default=90, ge=15, le=12 * 60),
     db: DbSession = Depends(get_db),
-    # OPTIONAL auth:
-    # user: User = Depends(get_current_user),
+    user: User = Depends(get_current_user),
 ):
-    q = db.query(ObservationSession)
+    q = db.query(ObservationSession).filter(
+        ObservationSession.owner_id == user.id
+    )
 
     if location_id is not None:
         q = q.filter(ObservationSession.location_id == location_id)

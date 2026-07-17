@@ -1,10 +1,8 @@
 from typing import List
-from zoneinfo import ZoneInfo
 from fastapi import APIRouter, Depends, HTTPException, status
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from sqlalchemy.orm import Session
 from datetime import datetime, timezone
-from typing import Iterable
 from app.core.deps import get_current_user
 from app.db.database import get_db
 from app.models.location import Location
@@ -44,7 +42,7 @@ def _get_user_session(db: Session, session_id: int, user_id: int) -> Observation
         .first()
     )
 
-def local_str_to_utc_naive(when_local: str, tz_name: str) -> datetime:
+def local_str_to_utc(when_local: str, tz_name: str) -> datetime:
     # when_local: "YYYY-MM-DDTHH:mm"
     try:
         dt_local_naive = datetime.fromisoformat(when_local)
@@ -57,8 +55,9 @@ def local_str_to_utc_naive(when_local: str, tz_name: str) -> datetime:
         raise HTTPException(status_code=400, detail="Invalid timezone")
 
     dt_local = dt_local_naive.replace(tzinfo=tz)
-    dt_utc = dt_local.astimezone(timezone.utc)
-    return dt_utc.replace(tzinfo=None)  # store naive UTC
+    # Store timezone-aware UTC: correct on Postgres (timestamptz), and on
+    # SQLite it degrades to naive UTC, which to_utc_aware() compensates for.
+    return dt_local.astimezone(timezone.utc)
 
 @router.post("/", response_model=SessionRead, status_code=status.HTTP_201_CREATED)
 def create_session(
@@ -84,12 +83,12 @@ def create_session(
         scheduled = session_in.scheduled_start
         if scheduled.tzinfo is None:
             scheduled = scheduled.replace(tzinfo=timezone.utc)
-        scheduled_start = scheduled.astimezone(timezone.utc).replace(tzinfo=None)
+        scheduled_start = scheduled.astimezone(timezone.utc)
 
     elif session_in.scheduled_start_local is not None:
         if not tz_name:
             raise HTTPException(status_code=400, detail="Timezone required for scheduled_start_local")
-        scheduled_start = local_str_to_utc_naive(session_in.scheduled_start_local, tz_name)
+        scheduled_start = local_str_to_utc(session_in.scheduled_start_local, tz_name)
 
     else:
         raise HTTPException(status_code=400, detail="Must provide scheduled_start or scheduled_start_local")
@@ -177,19 +176,19 @@ def update_session(
             .first()
         )
 
-    # Convert scheduled_start_local -> scheduled_start (UTC naive) if provided
+    # Convert scheduled_start_local -> scheduled_start (UTC) if provided
     if "scheduled_start_local" in data:
         tz_name = (location.timezone if location else None) or data.get("tz")
         if not tz_name:
             raise HTTPException(status_code=400, detail="Timezone required for scheduled_start_local")
-        data["scheduled_start"] = local_str_to_utc_naive(data["scheduled_start_local"], tz_name)
+        data["scheduled_start"] = local_str_to_utc(data["scheduled_start_local"], tz_name)
 
     # Normalize scheduled_start if provided as datetime
     if "scheduled_start" in data and data["scheduled_start"] is not None:
         scheduled = data["scheduled_start"]
         if scheduled.tzinfo is None:
             scheduled = scheduled.replace(tzinfo=timezone.utc)
-        data["scheduled_start"] = scheduled.astimezone(timezone.utc).replace(tzinfo=None)
+        data["scheduled_start"] = scheduled.astimezone(timezone.utc)
 
     # Remove non-model fields so setattr doesn't fail
     data.pop("scheduled_start_local", None)

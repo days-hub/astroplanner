@@ -1,6 +1,7 @@
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError, jwt
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.core.config import SECRET_KEY, ALGORITHM
@@ -12,7 +13,12 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
 
 
 def authenticate_user(db: Session, email: str, password: str):
-    user = db.query(User).filter(User.email == email).first()
+    # Case-insensitive match: older accounts may be stored with capitals
+    user = (
+        db.query(User)
+        .filter(func.lower(User.email) == email.strip().lower())
+        .first()
+    )
     if not user:
         return None
     if not verify_password(password, user.hashed_password):
@@ -42,14 +48,11 @@ def get_current_user(
         except (TypeError, ValueError):
             raise credentials_exception
 
-    except JWTError as e:
-        print(f"DEBUG - JWT Error: {e}")
+    except JWTError:
         raise credentials_exception
 
     user = db.query(User).filter(User.id == user_id).first()
     if user is None:
-        print(f"DEBUG - User {user_id} not found in database")
         raise credentials_exception
 
-    print(f"DEBUG - Successfully authenticated user: {user.email}")
     return user

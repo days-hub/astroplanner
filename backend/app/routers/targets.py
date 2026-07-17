@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import List, Literal, Optional
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -53,6 +53,18 @@ class VisibleTarget(BaseModel):
     reason: Optional[str] = None
     score: float
 
+
+class NightInfo(BaseModel):
+    date: str
+    timezone: str
+    # All times UTC; None when the event doesn't occur (e.g. no full
+    # astronomical darkness at high latitudes in summer)
+    sunset: Optional[datetime] = None
+    dark_start: Optional[datetime] = None
+    dark_end: Optional[datetime] = None
+    sunrise: Optional[datetime] = None
+    moon_illumination: float
+
 def _to_utc(dt: datetime) -> datetime:
     # If naive, assume it's UTC (your frontend sends ISO 'Z' anyway)
     if dt.tzinfo is None:
@@ -85,6 +97,81 @@ def _score(alt: float, sun_alt: float, elong: Optional[float], kind: str) -> flo
         s += 5.0  # bump “popular” targets a bit
     return s
 
+@router.get("/night", response_model=NightInfo)
+def night_info(
+    location_id: int,
+    date_local: str,                 # "YYYY-MM-DD" in the location's timezone
+    tz: Optional[str] = None,
+    db: DBSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Darkness window + moon illumination for one night (local noon to noon)."""
+    loc = (
+        db.query(Location)
+        .filter(Location.id == location_id, Location.owner_id == current_user.id)
+        .first()
+    )
+    if not loc:
+        raise HTTPException(status_code=404, detail="Location not found")
+    if loc.latitude is None or loc.longitude is None:
+        raise HTTPException(
+            status_code=400,
+            detail="Location has no coordinates; set latitude/longitude first",
+        )
+
+    tz_name = tz or loc.timezone
+    if not tz_name:
+        raise HTTPException(status_code=400, detail="Timezone required")
+    try:
+        zone = ZoneInfo(tz_name)
+    except ZoneInfoNotFoundError:
+        raise HTTPException(status_code=400, detail="Invalid timezone")
+
+    try:
+        day = date.fromisoformat(date_local)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid date_local format (YYYY-MM-DD)")
+
+    # Scan local noon -> next local noon so one call covers a whole night
+    noon_local = datetime(day.year, day.month, day.day, 12, tzinfo=zone)
+    start_utc = noon_local.astimezone(timezone.utc)
+    t0 = ts.from_datetime(start_utc)
+    t1 = ts.from_datetime(start_utc + timedelta(days=1))
+
+    observer = wgs84.latlon(loc.latitude, loc.longitude)
+    twilight = almanac.dark_twilight_day(eph, observer)
+    times, events = almanac.find_discrete(t0, t1, twilight)
+
+    # Event codes: 0 = dark night, 1-3 = twilight stages, 4 = day
+    sunset = sunrise = dark_start = dark_end = None
+    prev = int(twilight(t0))
+    for t, event in zip(times, events):
+        event = int(event)
+        dt = t.utc_datetime()
+        if prev == 4 and event < 4 and sunset is None:
+            sunset = dt
+        if event == 4 and prev < 4 and sunrise is None:
+            sunrise = dt
+        if event == 0 and dark_start is None:
+            dark_start = dt
+        if prev == 0 and event > 0 and dark_end is None:
+            dark_end = dt
+        prev = event
+
+    midnight = ts.from_datetime(start_utc + timedelta(hours=12))
+    moon_frac = float(almanac.fraction_illuminated(eph, "moon", midnight))
+
+    return NightInfo(
+        date=date_local,
+        timezone=tz_name,
+        sunset=sunset,
+        dark_start=dark_start,
+        dark_end=dark_end,
+        sunrise=sunrise,
+        moon_illumination=moon_frac,
+    )
+
+
 @router.get("/visible", response_model=List[VisibleTarget])
 def visible_targets(
     location_id: int,
@@ -101,6 +188,12 @@ def visible_targets(
     )
     if not loc:
         raise HTTPException(status_code=404, detail="Location not found")
+
+    if loc.latitude is None or loc.longitude is None:
+        raise HTTPException(
+            status_code=400,
+            detail="Location has no coordinates; set latitude/longitude first",
+        )
 
     # Prefer local-string + tz (your frontend), fallback to old "when"
     if when_local is not None:
