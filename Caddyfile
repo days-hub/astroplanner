@@ -1,0 +1,8 @@
+# Production TLS front door. Caddy obtains and renews Let's Encrypt
+# certificates for $DOMAIN automatically and redirects HTTP -> HTTPS.
+# Incoming X-Forwarded-For from clients is dropped (untrusted), so the
+# backend's rate limiting sees real client IPs.
+{$DOMAIN} {
+	encode gzip
+	reverse_proxy frontend:80
+}

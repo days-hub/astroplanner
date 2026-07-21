@@ -20,7 +20,16 @@ services:
       SECRET_KEY: ${SECRET_KEY:?Set SECRET_KEY in .env}
       ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-60}
       # Same-origin via the nginx proxy, so CORS only matters for extra origins
-      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:8080}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:8081}
+      # Optional: enables the Sky advisor (LLM recommendations). Empty = off.
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      ADVISOR_MODEL: ${ADVISOR_MODEL:-claude-opus-4-8}
+      # Demo mode (off here; the prod overlay flips these to demo-only).
+      DEMO_MODE: ${DEMO_MODE:-false}
+      ALLOW_REGISTRATION: ${ALLOW_REGISTRATION:-true}
+      DEMO_USER_TTL_HOURS: ${DEMO_USER_TTL_HOURS:-24}
+      RATE_LIMIT_DEMO_PER_HOUR: ${RATE_LIMIT_DEMO_PER_HOUR:-30}
+      RATE_LIMIT_DEMO_ADVISOR_PER_DAY: ${RATE_LIMIT_DEMO_ADVISOR_PER_DAY:-5}
     depends_on:
       db:
         condition: service_healthy
@@ -28,7 +37,11 @@ services:
   frontend:
     build: ./frontend
     ports:
-      - "8080:80"
+      # Loopback-only: locally you browse http://localhost:8081; in
+      # production Caddy (docker-compose.prod.yml) is the public entrance
+      # and reaches the frontend over the compose network.
+      # (8081 because a local Apache on this machine occupies 8080.)
+      - "127.0.0.1:${FRONTEND_PORT:-8081}:80"
     depends_on:
       - backend
 

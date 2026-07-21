@@ -1,0 +1,37 @@
+# Production overlay: TLS via Caddy + restart policies.
+# Run on the server with:
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+# Requires DOMAIN in .env (DNS A record pointing at the server).
+services:
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      DOMAIN: ${DOMAIN:?Set DOMAIN in .env (e.g. astro.example.com)}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - frontend
+
+  db:
+    restart: unless-stopped
+
+  backend:
+    restart: unless-stopped
+    # Public deploy runs demo-only: throwaway seeded accounts, no open signup,
+    # so no stranger PII is stored. Override in .env to change the stance.
+    environment:
+      DEMO_MODE: ${DEMO_MODE:-true}
+      ALLOW_REGISTRATION: ${ALLOW_REGISTRATION:-false}
+
+  frontend:
+    restart: unless-stopped
+
+volumes:
+  caddy_data:
+  caddy_config:

@@ -25,6 +25,9 @@ frontend/public/videos/
 **/*.mov
 **/*.mkv
 
+# Database backups (produced by scripts/backup_db.sh)
+backups/
+
 # Ephemeris + local databases
 de421.bsp
 *.bsp
