@@ -127,6 +127,17 @@ def night_info(
     except ZoneInfoNotFoundError:
         raise HTTPException(status_code=400, detail="Invalid timezone")
 
+    return compute_night_info(loc.latitude, loc.longitude, date_local, tz_name, zone)
+
+
+def compute_night_info(
+    latitude: float,
+    longitude: float,
+    date_local: str,
+    tz_name: str,
+    zone: ZoneInfo,
+) -> NightInfo:
+    """Darkness window + moon illumination for one night (local noon to noon)."""
     try:
         day = date.fromisoformat(date_local)
     except ValueError:
@@ -138,7 +149,7 @@ def night_info(
     t0 = ts.from_datetime(start_utc)
     t1 = ts.from_datetime(start_utc + timedelta(days=1))
 
-    observer = wgs84.latlon(loc.latitude, loc.longitude)
+    observer = wgs84.latlon(latitude, longitude)
     twilight = almanac.dark_twilight_day(eph, observer)
     times, events = almanac.find_discrete(t0, t1, twilight)
 
@@ -205,9 +216,18 @@ def visible_targets(
         when_utc = _to_utc(when)
     else:
         raise HTTPException(status_code=400, detail="Provide when or when_local")
+
+    return compute_visible_targets(loc.latitude, loc.longitude, when_utc)
+
+
+def compute_visible_targets(
+    latitude: float,
+    longitude: float,
+    when_utc: datetime,
+) -> List[VisibleTarget]:
     t = ts.from_datetime(when_utc)
 
-    observer = wgs84.latlon(loc.latitude, loc.longitude)
+    observer = wgs84.latlon(latitude, longitude)
     topo = earth + observer
 
     # Sun altitude (darkness)

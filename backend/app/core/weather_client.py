@@ -88,3 +88,55 @@ async def get_weather_for_time(
         "is_day": bool(is_day_val) if is_day_val is not None else None,
         "weather_code": int(weather_code) if weather_code is not None else None,  # ✅ NEW
     }
+
+
+async def get_hourly_forecast(
+    latitude: float,
+    longitude: float,
+    start_utc: datetime,
+    end_utc: datetime,
+) -> list[Dict[str, Any]]:
+    """
+    Hourly forecast rows between start_utc and end_utc (inclusive) from
+    Open-Meteo. Each row: {time, cloud_cover, temperature, wind_speed}.
+    """
+    start_utc = _as_utc_aware(start_utc)
+    end_utc = _as_utc_aware(end_utc)
+
+    url = "https://api.open-meteo.com/v1/forecast"
+    params = {
+        "latitude": latitude,
+        "longitude": longitude,
+        "hourly": "temperature_2m,cloud_cover,wind_speed_10m",
+        "start_date": start_utc.date().isoformat(),
+        "end_date": end_utc.date().isoformat(),
+        "timezone": "UTC",
+    }
+
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        resp = await client.get(url, params=params)
+
+    if resp.status_code != 200:
+        raise WeatherError(f"Weather API error: {resp.status_code} {resp.text}")
+
+    hourly = (resp.json().get("hourly") or {})
+    times = hourly.get("time") or []
+    clouds = hourly.get("cloud_cover") or []
+    temps = hourly.get("temperature_2m") or []
+    winds = hourly.get("wind_speed_10m") or []
+
+    rows: list[Dict[str, Any]] = []
+    for i, t in enumerate(times):
+        t_dt = datetime.fromisoformat(t)
+        if t_dt.tzinfo is None:
+            t_dt = t_dt.replace(tzinfo=timezone.utc)
+        if start_utc <= t_dt <= end_utc:
+            rows.append(
+                {
+                    "time": t_dt.isoformat(),
+                    "cloud_cover": clouds[i] if i < len(clouds) else None,
+                    "temperature": temps[i] if i < len(temps) else None,
+                    "wind_speed": winds[i] if i < len(winds) else None,
+                }
+            )
+    return rows

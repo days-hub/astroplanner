@@ -18,6 +18,7 @@ import {
 } from "./theme";
 import SpaceBackground from "./SpaceBackground";
 import TonightPanel from "./TonightPanel";
+import AdvisorPanel from "./AdvisorPanel";
 import WeatherIcon from "./WeatherIcon";
 
 interface Props {
@@ -938,6 +939,15 @@ async function handleDeleteSession(id: number) {
             locationName={selectedLocation?.name}
             tz={tz}
             onPlan={handlePlanFromTonight}
+          />
+        )}
+
+        {/* Sky advisor (renders only when the backend has an Anthropic key) */}
+        {selectedLocationId != null && (
+          <AdvisorPanel
+            locationId={selectedLocationId}
+            locationName={selectedLocation?.name}
+            tz={tz}
           />
         )}
 
