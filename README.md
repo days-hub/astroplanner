@@ -39,9 +39,9 @@ check the hourly forecast for your session, and log what you saw.
 
 ## Screenshots
 
-The Sky advisor, answering a question about a night. Note that it flags the
-date mismatch rather than guessing, and reports poor conditions honestly —
-every figure it quotes comes from the app's own computed data:
+The Sky advisor turning a night's computed data into a plan. Every figure it
+quotes — cloud cover, the darkness window, moonset, each target's altitude and
+bearing — comes from the app's own calculations, not the model's memory:
 
 ![Sky advisor](docs/screenshots/advisor.png)
 

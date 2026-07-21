@@ -36,6 +36,19 @@ function fetchStatus(): Promise<AdvisorStatus> {
   return statusPromise;
 }
 
+// "2026-07-24" -> "Friday, July 24". Spelling out the night being asked
+// about keeps the date picker from silently governing the answer — otherwise
+// it's easy to type "Friday" while the picker still says Tuesday.
+function prettyDate(iso: string) {
+  const [y, m, d] = iso.split("-").map(Number);
+  if (!y || !m || !d) return iso;
+  return new Date(y, m - 1, d).toLocaleDateString(undefined, {
+    weekday: "long",
+    month: "long",
+    day: "numeric",
+  });
+}
+
 function todayInTz(tz: string) {
   try {
     return new Intl.DateTimeFormat("en-CA", { timeZone: tz }).format(new Date());
@@ -136,7 +149,8 @@ export default function AdvisorPanel({ locationId, locationName, tz }: Props) {
             🔭 Sky advisor{locationName ? ` · ${locationName}` : ""}
           </h3>
           <div style={{ fontSize: "0.78rem", color: "#9ca3af", marginTop: "0.15rem" }}>
-            Ask about a night — the answer is grounded in this app's computed sky &amp; weather data.
+            Answers are grounded in this app's computed sky &amp; weather data for{" "}
+            <strong style={{ color: "#e5e7eb", fontWeight: 600 }}>{prettyDate(dateStr)}</strong>.
           </div>
         </div>
         <input
@@ -154,7 +168,7 @@ export default function AdvisorPanel({ locationId, locationName, tz }: Props) {
           value={question}
           onChange={(e) => setQuestion(e.target.value)}
           maxLength={500}
-          placeholder="e.g. What's worth looking at that night? Is it worth setting up the scope?"
+          placeholder="e.g. What's worth looking at, and when? Is it worth setting up the scope?"
           style={{ ...field, flex: "1 1 260px" }}
         />
         <button type="submit" disabled={asking || !question.trim()} style={btnPrimarySm}>
