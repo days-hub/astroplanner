@@ -11,6 +11,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
+from app.core import ratelimit
 from app.db.database import Base, get_db
 from app.main import app
 
@@ -33,6 +34,7 @@ def _override_get_db():
 
 @pytest.fixture()
 def client():
+    ratelimit.reset_all()  # limiter state is process-global; isolate tests
     Base.metadata.create_all(bind=engine)
     app.dependency_overrides[get_db] = _override_get_db
     with TestClient(app) as c:

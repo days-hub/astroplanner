@@ -6,7 +6,9 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.core import deps
+from app.core import config
 from app.core.config import ACCESS_TOKEN_EXPIRE_MINUTES
+from app.core.ratelimit import limit_login, limit_register
 from app.core.security import get_password_hash, create_access_token
 from app.db.database import get_db
 from app.models.user import User
@@ -15,8 +17,20 @@ from app.schemas.user import UserCreate, UserRead, Token
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 
-@router.post("/register", response_model=UserRead, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/register",
+    response_model=UserRead,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(limit_register)],
+)
 def register_user(user_in: UserCreate, db: Session = Depends(get_db)):
+    # Public deployments run demo-only: registration is disabled by design
+    # so no stranger PII ever lands in the database (see /demo/start).
+    if not config.ALLOW_REGISTRATION:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Public registration is disabled on this deployment. Use the demo instead.",
+        )
     # Store lowercase so lookups are case-insensitive
     email = user_in.email.strip().lower()
     existing = db.query(User).filter(func.lower(User.email) == email).first()
@@ -36,7 +50,7 @@ def register_user(user_in: UserCreate, db: Session = Depends(get_db)):
     return user
 
 
-@router.post("/login", response_model=Token)
+@router.post("/login", response_model=Token, dependencies=[Depends(limit_login)])
 def login_for_access_token(
     form_data: OAuth2PasswordRequestForm = Depends(),
     db: Session = Depends(get_db),
