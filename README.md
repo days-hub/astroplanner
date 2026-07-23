@@ -1,4 +1,5 @@
 # AstroPlanner
+Live demo: bortle.app — no signup required, click "Try the demo" for a seeded sandbox.
 
 AstroPlanner is an astronomy session planner and observing log web app. Pick an
 observing location, see which planets and deep-sky objects are actually visible
