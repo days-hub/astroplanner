@@ -11,7 +11,8 @@
 # at startup and on an hourly background task. FK cascades take the
 # seeded locations/sessions/logs with them.
 import secrets
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, time, timedelta, timezone
+from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
@@ -46,12 +47,27 @@ def _require_demo_mode() -> None:
         )
 
 
+SEED_TZ = ZoneInfo("America/Toronto")  # both seeded locations are in this zone
+
+
+def _evening_utc(days_offset: int, hour: int = 22, minute: int = 30) -> datetime:
+    """A believable observing time: 22:30 local at the seeded locations,
+    returned as UTC for the DB.
+
+    Seeding relative to "now" keeps the demo from going stale, but the hour
+    has to be pinned too: without this, a visitor who clicks the demo at
+    5 AM gets a "completed" deep-sky session timestamped 5 AM, sitting next
+    to a daytime weather forecast and a log praising the dark skies.
+    """
+    local_day = (datetime.now(SEED_TZ) + timedelta(days=days_offset)).date()
+    local = datetime.combine(local_day, time(hour, minute), tzinfo=SEED_TZ)
+    return local.astimezone(timezone.utc)
+
+
 def _seed_demo_data(db: Session, user: User) -> None:
     """Give the visitor a populated app: two locations with contrast
     (city vs dark-sky), an upcoming planned session, and completed
     sessions with observation logs so every page renders with data."""
-    now = datetime.now(timezone.utc)
-
     toronto = Location(
         name="Toronto, Canada",
         latitude=43.71,
@@ -73,21 +89,21 @@ def _seed_demo_data(db: Session, user: User) -> None:
     upcoming = ObservationSession(
         target_name="Saturn",
         status="planned",
-        scheduled_start=(now + timedelta(days=3)).replace(minute=0, second=0, microsecond=0),
+        scheduled_start=_evening_utc(3),
         owner=user,
         location=toronto,
     )
     m31 = ObservationSession(
         target_name="Andromeda Galaxy (M31)",
         status="completed",
-        scheduled_start=now - timedelta(days=9),
+        scheduled_start=_evening_utc(-9),
         owner=user,
         location=barrens,
     )
     jupiter = ObservationSession(
         target_name="Jupiter",
         status="completed",
-        scheduled_start=now - timedelta(days=23),
+        scheduled_start=_evening_utc(-23, hour=23, minute=15),
         owner=user,
         location=toronto,
     )

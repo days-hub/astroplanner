@@ -58,6 +58,30 @@ class TestDemoAccount:
         assert statuses.count("planned") == 1
         assert statuses.count("completed") == 2
 
+    def test_seeded_sessions_land_at_night(self, client, demo_mode):
+        """Seeded sessions must be at a believable observing hour.
+
+        They're seeded relative to "now" to stay fresh, so without pinning
+        the hour a visitor who clicks the demo at 5 AM saw a "completed"
+        deep-sky session at 5 AM beside a daytime forecast.
+        """
+        from zoneinfo import ZoneInfo
+
+        headers = _start_demo(client)
+        sessions = client.get("/sessions/", headers=headers).json()
+        assert len(sessions) == 3
+
+        tz = ZoneInfo("America/Toronto")
+        for s in sessions:
+            start = datetime.fromisoformat(s["scheduled_start"])
+            if start.tzinfo is None:
+                start = start.replace(tzinfo=timezone.utc)
+            local_hour = start.astimezone(tz).hour
+            assert local_hour >= 20 or local_hour <= 4, (
+                f"{s['target_name']} seeded at {local_hour}:00 local — "
+                "not a plausible observing time"
+            )
+
     def test_demo_user_is_flagged(self, client, demo_mode):
         headers = _start_demo(client)
         email = client.get("/auth/me", headers=headers).json()["email"]
