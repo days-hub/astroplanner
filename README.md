@@ -118,11 +118,31 @@ loopback only — in production the public entrance is Caddy (below).
 | `DEMO_USER_TTL_HOURS` | optional | age at which demo accounts are purged, default 24 |
 | `RATE_LIMIT_*` | optional | override the login/register/advisor/demo limits |
 
+## Database migrations
+
+Schema changes run through Alembic, applied automatically at startup
+(`app/db/migrations.py`). Databases created before Alembic was introduced are
+detected and stamped at the baseline rather than colliding with it, so
+upgrading an existing deployment needs no manual step.
+
+After changing a model:
+
+```bash
+cd backend
+alembic revision --autogenerate -m "what changed"   # review the generated file
+alembic upgrade head                                # or just restart the app
+```
+
+`tests/test_migrations.py` fails if the models and migrations drift apart, so
+a forgotten migration is caught in CI rather than at deploy time. This
+replaced `Base.metadata.create_all()`, which created missing *tables* but
+never altered existing ones — adding a column left every already-deployed
+database silently behind.
+
 ## Roadmap
 
-- Alembic migrations (schema is currently `create_all` on startup — a
-  pre-existing SQLite dev database needs a manual `ALTER TABLE` after a
-  model change until this lands)
 - More DSO targets and a proper catalog search
+- Password reset flow (public deploys run demo-only, so no stranger accounts
+  depend on it today)
 
 Background image credits: `frontend/src/assets/backgrounds/ATTRIBUTION.md`.

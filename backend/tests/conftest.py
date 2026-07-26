@@ -33,8 +33,14 @@ def _override_get_db():
 
 
 @pytest.fixture()
-def client():
+def client(monkeypatch):
     ratelimit.reset_all()  # limiter state is process-global; isolate tests
+
+    # The app's lifespan runs Alembic against DATABASE_URL. Tests build their
+    # own schema on a shared in-memory engine below, so stub it out here —
+    # test_migrations.py exercises the real migration path against a temp file.
+    monkeypatch.setattr("app.main.run_migrations", lambda: None)
+
     Base.metadata.create_all(bind=engine)
     app.dependency_overrides[get_db] = _override_get_db
     with TestClient(app) as c:

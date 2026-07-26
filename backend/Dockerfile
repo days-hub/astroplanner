@@ -10,6 +10,10 @@ RUN pip install --no-cache-dir -r requirements.txt
 RUN python -c "from skyfield.api import load; load('de421.bsp')"
 
 COPY app ./app
+# Schema migrations run at startup (app/db/migrations.py), so the Alembic
+# config and revision scripts have to be in the image alongside the code.
+COPY alembic.ini ./alembic.ini
+COPY alembic ./alembic
 
 EXPOSE 8000
 

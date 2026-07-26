@@ -7,7 +7,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.core import config
 from app.core.config import CORS_ORIGINS, CORS_ORIGIN_REGEX
 from app.routers import targets
-from app.db.database import Base, engine, SessionLocal
+from app.db.database import SessionLocal
+from app.db.migrations import run_migrations
 from app.models import user, location, observation_session, observation_log  # noqa
 from app.routers import auth, locations, sessions, observation_logs, weather, geocode
 from app.routers import planner
@@ -44,7 +45,7 @@ async def _demo_purge_loop() -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    Base.metadata.create_all(bind=engine)
+    run_migrations()
     # Only bother with demo cleanup where demo accounts can exist. Sweep
     # once at startup (catches anything left by a previous run), then hourly.
     purge_task = None
