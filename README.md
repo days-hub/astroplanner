@@ -1,5 +1,7 @@
 # AstroPlanner
-Live demo: bortle.app — no signup required, click "Try the demo" for a seeded sandbox.
+
+**Live demo: [bortle.app](https://bortle.app)** — no signup required; click
+"Try the demo" for a seeded sandbox.
 
 AstroPlanner is an astronomy session planner and observing log web app. Pick an
 observing location, see which planets and deep-sky objects are actually visible
@@ -33,7 +35,8 @@ check the hourly forecast for your session, and log what you saw.
 - User accounts with JWT auth (case-insensitive emails, friendly API errors)
 - **Demo mode**: a one-click "Try the demo" button mints an ephemeral,
   pre-seeded account so visitors land straight in a populated dashboard — with
-  public registration disabled by design on the hosted deploy (see below)
+  public registration disabled by design on the hosted deploy, so no stranger
+  PII is stored
 - Ambient space backdrop: a procedural canvas starfield (parallax drift,
   twinkle, shooting stars) over a NASA/ESA photo of whatever target you're
   planning — ~4 MB of assets total, honors `prefers-reduced-motion`
@@ -99,8 +102,8 @@ docker compose up --build
 Then open `http://localhost:8081`. nginx serves the built frontend, proxies
 `/api/*` to the FastAPI container (same origin, no CORS in production), and
 Postgres data persists in the `pgdata` volume. The frontend port is bound to
-loopback only — in production the public entrance is Caddy (below).
-
+loopback only; the production overlay (`docker-compose.prod.yml`) puts Caddy in
+front of it for automatic TLS.
 
 ## Configuration
 
