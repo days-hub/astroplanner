@@ -23,7 +23,7 @@ type LocationComparison = {
 };
 
 type Recommendation = {
-  status: "stay" | "switch" | "none_usable";
+  status: "stay_best" | "stay_nearby" | "switch" | "none_usable";
   location_id?: number | null;
   reason: string;
 };
@@ -137,12 +137,18 @@ export default function BestLocation({
   const alreadyBest = rec?.status !== "switch";
   const v = recommended.conditions ? verdictStyles[recommended.conditions] : null;
 
+  // "stay" covers two different situations and they must not share a
+  // headline: claiming the current site is best while the reason line says
+  // somewhere else is clearer reads as a contradiction, and it re-crowns
+  // whichever site you happen to have selected.
   const headline =
     rec?.status === "none_usable"
       ? "No saved site offers good conditions"
       : rec?.status === "switch"
         ? `A better saved site is available: ${recommended.name}`
-        : `${recommended.name} is your best site tonight`;
+        : rec?.status === "stay_nearby"
+          ? `Stay at ${recommended.name} — the clearer sites aren't worth the drive`
+          : `${recommended.name} is your best site tonight`;
 
   const detail = rec?.reason ?? "";
 

@@ -320,14 +320,21 @@ def switch_margin(distance_km: Optional[float]) -> float:
 def choose_location(sites: list[dict], current_id: Optional[int]) -> dict:
     """Decide what to tell the user about their saved sites tonight.
 
-    Returns one of three answers rather than always naming a competitor:
-    the current site is the best call, a different one is worth the drive,
-    or nothing is usable. Each comes with the numbers behind it, because a
-    recommendation the user can't check is a recommendation they won't
-    trust — especially when it's asking them to drive somewhere.
+    Four answers, because "stay put" has two very different meanings and
+    collapsing them produces a headline that contradicts its own evidence:
+
+      stay_best   - the current site genuinely has the best sky
+      stay_nearby - somewhere is clearer, but not by enough to justify the
+                    trip; the alternative is named rather than hidden
+      switch      - a site is better by more than its distance costs
+      none_usable - nothing has a clear window at all
+
+    Every candidate is weighed, not just the top-scoring one. Judging only
+    the best sky means a nearer, genuinely-worth-it site gets skipped
+    whenever some distant site happens to outrank it.
 
     `sites` are dicts with id/name/score/clear_hours/cloud_cover_percent/
-    distance_km, and are expected to be sorted best-sky-first.
+    distance_km, sorted best-sky-first.
     """
     if not sites:
         return {"status": "none_usable", "location_id": None, "reason": ""}
@@ -343,6 +350,13 @@ def choose_location(sites: list[dict], current_id: Optional[int]) -> dict:
         h = s.get("clear_hours") or 0
         return f"{h:g}-hour clear window" if h else "no clear window"
 
+    def away(s: dict) -> str:
+        d = s.get("distance_km")
+        return f"{round(d)} km away" if d else "nearby"
+
+    def all_sites_tail() -> str:
+        return f" — the best of your {len(sites)} saved sites." if len(sites) > 1 else "."
+
     if not usable:
         return {
             "status": "none_usable",
@@ -353,39 +367,49 @@ def choose_location(sites: list[dict], current_id: Optional[int]) -> dict:
     best = usable[0]
 
     if current is None or best["id"] == current["id"]:
-        others = len(sites) - 1
-        tail = f" — the best of your {len(sites)} saved sites." if others else "."
         return {
-            "status": "stay",
+            "status": "stay_best",
             "location_id": best["id"],
-            "reason": f"{clouds(best)} and a {window(best)}{tail}",
+            "reason": f"{clouds(best)} and a {window(best)}{all_sites_tail()}",
         }
 
-    gain = best["score"] - current["score"]
-    needed = switch_margin(best.get("distance_km"))
-    dist = best.get("distance_km")
-    away = f"{round(dist)} km away" if dist else "nearby"
+    # How much each better site beats the current one by, over and above what
+    # its distance costs. Positive means the trip pays for itself.
+    def net(s: dict) -> float:
+        return (s["score"] - current["score"]) - switch_margin(s.get("distance_km"))
 
-    if gain < needed:
-        # Something is nominally better, but not by enough to justify moving.
-        # Say so explicitly — silently recommending the current site looks
-        # identical to not having noticed the alternative.
+    better = [s for s in usable if s["score"] > current["score"]]
+    if not better:
         return {
-            "status": "stay",
+            "status": "stay_best",
             "location_id": current["id"],
+            "reason": f"{clouds(current)} and a {window(current)}{all_sites_tail()}",
+        }
+
+    worth_it = [s for s in better if net(s) >= 0]
+    if worth_it:
+        # Best value, not best sky: a site that clears its bar comfortably
+        # beats one that barely clears it from twice the distance.
+        pick = max(worth_it, key=net)
+        return {
+            "status": "switch",
+            "location_id": pick["id"],
             "reason": (
-                f"{clouds(current)} and a {window(current)}. "
-                f"{best['name']} is a little better ({clouds(best)}) but it's "
-                f"{away} — not enough gain for the drive."
+                f"{clouds(pick)} vs {clouds(current)} at {current['name']}, and a "
+                f"{window(pick)} vs {window(current)}. {away(pick)}."
             ),
         }
 
+    # Nothing earns the trip. Name the closest call so the advice is checkable
+    # instead of looking like the alternatives were never considered.
+    runner_up = max(better, key=net)
     return {
-        "status": "switch",
-        "location_id": best["id"],
+        "status": "stay_nearby",
+        "location_id": current["id"],
         "reason": (
-            f"{clouds(best)} vs {clouds(current)} at {current['name']}, and a "
-            f"{window(best)} vs {window(current)}. {away}."
+            f"{clouds(current)} and a {window(current)}. "
+            f"{runner_up['name']} is clearer ({clouds(runner_up)}) but it's "
+            f"{away(runner_up)} — not enough gain for the drive."
         ),
     }
 

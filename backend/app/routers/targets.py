@@ -370,7 +370,7 @@ class LocationRecommendation(BaseModel):
     """What to actually do about the saved sites tonight."""
     # "stay" | "switch" | "none_usable" — the UI headline follows from this,
     # so it never has to force a competing site into the sentence.
-    status: Literal["stay", "switch", "none_usable"]
+    status: Literal["stay_best", "stay_nearby", "switch", "none_usable"]
     location_id: Optional[int] = None
     # The numbers behind the call, so the user can check it
     reason: str = ""

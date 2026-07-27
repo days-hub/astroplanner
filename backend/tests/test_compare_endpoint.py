@@ -47,7 +47,7 @@ class TestCompareEndpoint:
         )
         assert r.status_code == 200, r.text
         body = r.json()
-        assert body["recommendation"]["status"] in {"stay", "switch", "none_usable"}
+        assert body["recommendation"]["status"] in {"stay_best", "stay_nearby", "switch", "none_usable"}
         assert body["locations"][0]["score"] > 0
         # Wind is part of the score, so it has to actually reach the entry
         assert body["locations"][0]["wind_kmh"] == 5.0

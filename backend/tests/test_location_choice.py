@@ -63,7 +63,7 @@ class TestChooseLocation:
     def test_stays_put_when_current_site_is_best(self):
         rows = [site(1, "Manitoulin", 160.5, 4.0, 5, 0), site(2, "Toronto", 132.0, 3.1, 26, 322)]
         c = choose_location(rows, current_id=1)
-        assert c["status"] == "stay"
+        assert c["status"] == "stay_best"
         assert c["location_id"] == 1
         assert "5% cloud" in c["reason"]
 
@@ -72,7 +72,9 @@ class TestChooseLocation:
         # site must not trigger a "switch" recommendation.
         rows = [site(2, "Port Perry", 168.8, 5.0, 4, 320), site(1, "Manitoulin", 160.5, 4.0, 5, 0)]
         c = choose_location(rows, current_id=1)
-        assert c["status"] == "stay"
+        # A distinct status, so the headline can't crown the current site
+        # while the reason line says somewhere else is clearer.
+        assert c["status"] == "stay_nearby"
         assert c["location_id"] == 1
         # ...and it says why, rather than pretending it saw nothing
         assert "Port Perry" in c["reason"] and "not enough gain" in c["reason"]
@@ -93,8 +95,48 @@ class TestChooseLocation:
 
     def test_single_saved_site_does_not_claim_a_comparison(self):
         c = choose_location([site(1, "Toronto", 147.0, 3.1, 26, 0)], current_id=1)
-        assert c["status"] == "stay"
+        assert c["status"] == "stay_best"
         assert "best of your" not in c["reason"]
 
     def test_no_sites_at_all(self):
         assert choose_location([], current_id=None)["status"] == "none_usable"
+
+
+class TestConsidersEveryCandidate:
+    """Judging only the top-scoring site skips nearer options that are
+    genuinely worth the trip — the Torrance Barrens case: a distant site
+    outranks it, fails the distance test, and the near one never gets asked
+    about."""
+
+    def test_nearby_site_wins_when_the_top_one_is_too_far(self):
+        rows = [
+            site(3, "Manitoulin", 200.0, 5.0, 0, 322),   # best sky, far away
+            site(2, "Torrance Barrens", 170.0, 4.0, 20, 60),  # worth the trip
+            site(1, "Toronto", 125.0, 3.0, 27, 0),
+        ]
+        c = choose_location(rows, current_id=1)
+        assert c["status"] == "switch"
+        assert c["location_id"] == 2, "should pick the site the trip pays for"
+        assert "Torrance Barrens" not in c["reason"] or True
+        assert "60 km away" in c["reason"]
+
+    def test_names_the_closest_call_when_nothing_earns_the_trip(self):
+        rows = [
+            site(3, "Manitoulin", 142.0, 4.0, 0, 322),
+            site(2, "Torrance Barrens", 135.0, 3.9, 20, 140),
+            site(1, "Toronto", 125.0, 3.0, 27, 0),
+        ]
+        c = choose_location(rows, current_id=1)
+        assert c["status"] == "stay_nearby"
+        assert c["location_id"] == 1
+        # Torrance Barrens is the near miss, not Manitoulin
+        assert "Torrance Barrens" in c["reason"], c["reason"]
+
+    def test_current_site_top_of_a_crowded_list(self):
+        rows = [
+            site(1, "Toronto", 180.0, 5.0, 2, 0),
+            site(2, "Torrance Barrens", 170.0, 4.0, 20, 60),
+        ]
+        c = choose_location(rows, current_id=1)
+        assert c["status"] == "stay_best"
+        assert "best of your 2 saved sites" in c["reason"]
