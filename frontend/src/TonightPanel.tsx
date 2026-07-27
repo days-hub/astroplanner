@@ -1,22 +1,35 @@
 // src/TonightPanel.tsx
 //
-// "Tonight at a glance": darkness window, moon, and ranked visible targets
-// for the selected location. Clicking a target prefills the New Session form.
+// The page's centrepiece: for the selected location and night, answer
+// "is it worth going out, when, and at what?" before any technical detail.
+// Hierarchy is deliberate — verdict and observing window first, altitudes
+// and bearings second. Location and date come from the page context bar.
 import type React from "react";
 import { useEffect, useState } from "react";
 import api from "./api";
-import { btnPrimarySm, card, chip, field } from "./theme";
+import AdvisorPanel from "./AdvisorPanel";
+import CloudTimeline, { type CloudPoint } from "./CloudTimeline";
+import {
+  btnPrimarySm,
+  btnSecondarySm,
+  cardFeature,
+  chip,
+  fontSize,
+  text,
+  verdictStyles,
+} from "./theme";
 
-type VisibleTarget = {
+type Suitability = "good" | "fair" | "poor" | "very_poor";
+
+type RatedTarget = {
   name: string;
   kind: "planet" | "moon" | "dso" | "star";
   altitude_deg: number;
   azimuth_deg: number;
-  sun_altitude_deg: number;
-  elongation_deg?: number | null;
   visible: boolean;
   reason?: string | null;
-  score: number;
+  suitability?: Suitability | null;
+  suitability_reason?: string | null;
 };
 
 type NightInfo = {
@@ -27,21 +40,56 @@ type NightInfo = {
   dark_end?: string | null;
   sunrise?: string | null;
   moon_illumination: number;
+  moon_up_fraction?: number | null;
+  conditions?: "good" | "fair" | "poor" | null;
+  conditions_summary?: string | null;
+  cloud_cover_percent?: number | null;
+};
+
+type Recommendation = {
+  headline: string;
+  detail: string;
+  next_better_date?: string | null;
+  next_better_weekday?: string | null;
+};
+
+type TonightSummary = {
+  night: NightInfo;
+  sample_time_local: string;
+  targets: RatedTarget[];
+  hourly_cloud: CloudPoint[];
+  clear_from_local?: string | null;
+  clear_to_local?: string | null;
+  clear_hours: number;
+  focus?: string | null;
+  cloud_trend?: string | null;
+  recommendation?: Recommendation | null;
 };
 
 interface Props {
   locationId: number;
   locationName?: string;
   tz: string;
-  /** Prefill the New Session form with this target + local start time */
+  dateStr: string;
   onPlan: (targetName: string, whenLocal: string) => void;
+  /** Jump the page to the suggested better night */
+  onPickDate?: (date: string) => void;
 }
 
-const KIND_ICONS: Record<VisibleTarget["kind"], string> = {
+const KIND_ICONS: Record<RatedTarget["kind"], string> = {
   planet: "🪐",
   moon: "🌙",
   dso: "✨",
   star: "⭐",
+};
+
+// Wording is deliberately blunt: a target being above the horizon is not a
+// recommendation, and the label should say so without needing the caveat.
+const SUITABILITY_LABELS: Record<Suitability, { label: string; color: string }> = {
+  good: { label: "Good", color: "#6ee7b7" },
+  fair: { label: "Fair", color: "#fcd34d" },
+  poor: { label: "Poor", color: "#fca5a5" },
+  very_poor: { label: "Very poor", color: "#f87171" },
 };
 
 function parseApiDate(s: string) {
@@ -63,28 +111,6 @@ function fmtTime(iso: string | null | undefined, tz: string) {
   }
 }
 
-function dateToLocalInput(d: Date, tz: string) {
-  try {
-    const parts = new Intl.DateTimeFormat("en-CA", {
-      timeZone: tz,
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-      hour: "2-digit",
-      minute: "2-digit",
-      hour12: false,
-    }).formatToParts(d);
-    const get = (type: string) => parts.find((p) => p.type === type)?.value ?? "";
-    const hour = get("hour") === "24" ? "00" : get("hour");
-    return `${get("year")}-${get("month")}-${get("day")}T${hour}:${get("minute")}`;
-  } catch {
-    const pad = (n: number) => String(n).padStart(2, "0");
-    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
-  }
-}
-
-// Format the time part of a "YYYY-MM-DDTHH:mm" local string for display —
-// it's already wall-clock time in the target tz, so no conversion.
 function fmtLocalInput(s: string) {
   const [h, m] = s.slice(11).split(":").map(Number);
   const ampm = h >= 12 ? "PM" : "AM";
@@ -92,12 +118,38 @@ function fmtLocalInput(s: string) {
   return `${h12}:${String(m).padStart(2, "0")} ${ampm}`;
 }
 
-function todayInTz(tz: string) {
+// "Tonight at X" is wrong the moment you look at another night — and the
+// card is the page's headline, so it's the fastest way to lose track of
+// which night you're actually reading. Name the night instead.
+function nightLabel(dateStr: string, tz: string): string {
+  let today: string;
   try {
-    return new Intl.DateTimeFormat("en-CA", { timeZone: tz }).format(new Date());
+    today = new Intl.DateTimeFormat("en-CA", { timeZone: tz }).format(new Date());
   } catch {
-    return new Intl.DateTimeFormat("en-CA").format(new Date());
+    today = new Intl.DateTimeFormat("en-CA").format(new Date());
   }
+
+  const asUTC = (d: string) => {
+    const [y, m, day] = d.split("-").map(Number);
+    return Date.UTC(y, m - 1, day);
+  };
+  const days = Math.round((asUTC(dateStr) - asUTC(today)) / 86_400_000);
+
+  if (days === 0) return "Tonight";
+  if (days === 1) return "Tomorrow night";
+  if (days === -1) return "Last night";
+
+  const [y, m, d] = dateStr.split("-").map(Number);
+  const date = new Date(y, m - 1, d);
+  // Within the coming week a weekday is the most natural reference
+  if (days > 1 && days < 7) {
+    return `${date.toLocaleDateString(undefined, { weekday: "long" })} night`;
+  }
+  return date.toLocaleDateString(undefined, {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+  });
 }
 
 function degToCompass(deg: number) {
@@ -113,176 +165,344 @@ function moonEmoji(frac: number) {
   return "🌕";
 }
 
-const cardStyle = card;
-const chipStyle = chip;
-
 const targetCardStyle: React.CSSProperties = {
   borderRadius: 12,
-  border: "1px solid rgba(148,163,184,0.22)",
-  background: "rgba(2,6,23,0.35)",
-  padding: "0.6rem 0.7rem",
+  border: "1px solid rgba(148,163,184,0.25)",
+  background: "rgba(2,6,23,0.4)",
+  padding: "0.7rem 0.8rem",
   display: "grid",
   gap: "0.3rem",
 };
 
-export default function TonightPanel({ locationId, locationName, tz, onPlan }: Props) {
-  const [dateStr, setDateStr] = useState(() => todayInTz(tz));
-  const [night, setNight] = useState<NightInfo | null>(null);
-  const [targets, setTargets] = useState<VisibleTarget[]>([]);
-  const [suggestedLocal, setSuggestedLocal] = useState<string | null>(null);
+export default function TonightPanel({
+  locationId,
+  locationName,
+  tz,
+  dateStr,
+  onPlan,
+  onPickDate,
+}: Props) {
+  const [data, setData] = useState<TonightSummary | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
-
     (async () => {
       setLoading(true);
       setError(null);
       try {
-        const nightRes = await api.get<NightInfo>("/targets/night", {
+        const res = await api.get<TonightSummary>("/targets/tonight", {
           params: { location_id: locationId, date_local: dateStr, tz },
         });
-        if (cancelled) return;
-        setNight(nightRes.data);
-
-        // Suggest an hour into full darkness; fall back to 10 PM local
-        let whenLocal: string;
-        const { dark_start, dark_end } = nightRes.data;
-        if (dark_start) {
-          const start = parseApiDate(dark_start).getTime();
-          const end = dark_end ? parseApiDate(dark_end).getTime() : start + 2 * 3600e3;
-          const suggested = Math.min(start + 3600e3, (start + end) / 2);
-          whenLocal = dateToLocalInput(new Date(suggested), tz);
-        } else {
-          whenLocal = `${dateStr}T22:00`;
-        }
-        setSuggestedLocal(whenLocal);
-
-        const targetsRes = await api.get<VisibleTarget[]>("/targets/visible", {
-          params: { location_id: locationId, when_local: whenLocal, tz },
-        });
-        if (cancelled) return;
-        setTargets(targetsRes.data);
+        if (!cancelled) setData(res.data);
       } catch (err) {
         console.error(err);
         if (!cancelled) {
-          setError("Couldn't load tonight's sky for this location.");
-          setNight(null);
-          setTargets([]);
-          setSuggestedLocal(null);
+          setError("Couldn't load the sky for this location and night.");
+          setData(null);
         }
       } finally {
         if (!cancelled) setLoading(false);
       }
     })();
-
     return () => {
       cancelled = true;
     };
   }, [locationId, dateStr, tz]);
 
-  const visible = targets.filter((t) => t.visible);
-  const hiddenCount = targets.length - visible.length;
+  const night = data?.night ?? null;
+  const visible = (data?.targets ?? []).filter((t) => t.visible);
+  const hiddenCount = (data?.targets.length ?? 0) - visible.length;
+  const verdict = night?.conditions ? verdictStyles[night.conditions] : null;
+
+  // If nothing is even fair, say so above the list rather than letting the
+  // heading imply these are recommendations.
+  const bestSuitability = visible.reduce<Suitability | null>((best, t) => {
+    const order: Suitability[] = ["very_poor", "poor", "fair", "good"];
+    if (!t.suitability) return best;
+    if (!best) return t.suitability;
+    return order.indexOf(t.suitability) > order.indexOf(best) ? t.suitability : best;
+  }, null);
+  const allPoor = bestSuitability === "poor" || bestSuitability === "very_poor";
+
+  const windowText = night?.dark_start
+    ? `${fmtTime(night.dark_start, tz)} – ${fmtTime(night.dark_end, tz)}`
+    : night
+      ? "No full darkness that night"
+      : "—";
 
   return (
-    <section style={cardStyle}>
+    <section style={cardFeature}>
+      <h2
+        style={{
+          fontSize: fontSize.title,
+          fontWeight: 700,
+          margin: 0,
+          letterSpacing: "-0.01em",
+        }}
+      >
+        {nightLabel(dateStr, tz)} at {locationName ?? "your location"}
+      </h2>
+
+      {/* The bottom line, before any of the supporting detail. Everything
+          below is evidence; this is the conclusion. */}
+      {data?.recommendation && (
+        <div
+          style={{
+            marginTop: "0.75rem",
+            padding: "0.8rem 1rem",
+            borderRadius: 14,
+            background: verdict
+              ? verdict.background
+              : "rgba(148,163,184,0.08)",
+            border: verdict ? verdict.border : "1px solid rgba(148,163,184,0.25)",
+          }}
+        >
+          <div
+            style={{
+              fontSize: "1.1rem",
+              fontWeight: 700,
+              color: verdict ? verdict.color : text.primary,
+              letterSpacing: "-0.01em",
+            }}
+          >
+            {data.recommendation.headline}
+          </div>
+          <div
+            style={{
+              fontSize: fontSize.body,
+              color: text.primary,
+              marginTop: "0.25rem",
+            }}
+          >
+            {data.recommendation.detail}
+          </div>
+          {data.recommendation.next_better_date && onPickDate && (
+            <button
+              type="button"
+              onClick={() => onPickDate(data.recommendation!.next_better_date!)}
+              style={{ ...btnSecondarySm, marginTop: "0.6rem" }}
+            >
+              Plan {data.recommendation.next_better_weekday} instead
+            </button>
+          )}
+
+          {/* Question the verdict right where you read it */}
+          <AdvisorPanel
+            locationId={locationId}
+            tz={tz}
+            dateStr={dateStr}
+            compact
+            // Lets the one-tap questions match the night: gaps and
+            // cancellations under cloud, targets and timing when it's clear.
+            context={{
+              cloudPercent: night?.cloud_cover_percent ?? null,
+              clearHours: data?.clear_hours ?? 0,
+              moonIllumination: night?.moon_illumination ?? null,
+              moonUpFraction: night?.moon_up_fraction ?? null,
+            }}
+          />
+        </div>
+      )}
+
+      {/* Headline column beside the forecast chart — the chart fills space
+          that was previously empty and answers "when does it clear?", which
+          the nightly average can't. */}
       <div
         style={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          gap: "0.75rem",
-          flexWrap: "wrap",
-          marginBottom: "0.6rem",
+          display: "grid",
+          gridTemplateColumns: "minmax(0, 1.15fr) minmax(0, 1fr)",
+          gap: "1.5rem",
+          alignItems: "start",
+          marginTop: "0.7rem",
         }}
       >
         <div>
-          <h3 style={{ fontSize: "1rem", fontWeight: 600, margin: 0 }}>
-            Tonight{locationName ? ` · ${locationName}` : ""}
-          </h3>
-          {suggestedLocal && (
-            <div style={{ fontSize: "0.78rem", color: "#9ca3af", marginTop: "0.15rem" }}>
-              Sky shown for {fmtLocalInput(suggestedLocal)}
-              {night?.dark_start ? " — an hour into full darkness" : " — no full darkness this night"}
+          {verdict && (
+            <div
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                padding: "0.3rem 0.75rem",
+                borderRadius: 9999,
+                background: verdict.background,
+                border: verdict.border,
+                color: verdict.color,
+                fontSize: fontSize.body,
+                fontWeight: 700,
+              }}
+            >
+              {verdict.label}
+            </div>
+          )}
+
+          {night?.conditions_summary && (
+            <div
+              style={{
+                fontSize: fontSize.body,
+                color: text.secondary,
+                marginTop: "0.45rem",
+              }}
+            >
+              {night.conditions_summary}.
+            </div>
+          )}
+
+          {night && (
+            <div style={{ marginTop: "0.9rem" }}>
+              {/* On a washout the darkest hours are still the darkest hours,
+                  but calling them "best" reads as a recommendation the data
+                  doesn't support — so the label softens with the verdict. */}
+              <div style={{ fontSize: fontSize.small, color: text.muted }}>
+                {night.conditions === "poor"
+                  ? "Best available window (conditions poor)"
+                  : "Best observing window"}
+              </div>
+              <div
+                style={{
+                  fontSize: "1.5rem",
+                  fontWeight: 700,
+                  color: night.dark_start ? text.primary : text.secondary,
+                  letterSpacing: "-0.01em",
+                  lineHeight: 1.25,
+                }}
+              >
+                {windowText}
+              </div>
+            </div>
+          )}
+
+          {night && (
+            <div
+              style={{
+                display: "flex",
+                gap: "0.45rem",
+                flexWrap: "wrap",
+                marginTop: "0.8rem",
+              }}
+            >
+              <span style={chip}>🌇 Sunset {fmtTime(night.sunset, tz)}</span>
+              <span style={chip}>🌅 Sunrise {fmtTime(night.sunrise, tz)}</span>
+              <span style={chip}>
+                {moonEmoji(night.moon_illumination)} Moon{" "}
+                {Math.round(night.moon_illumination * 100)}%
+              </span>
             </div>
           )}
         </div>
 
-        <input
-          type="date"
-          value={dateStr}
-          onChange={(e) => e.target.value && setDateStr(e.target.value)}
-          style={{ ...field, width: "auto" }}
-        />
+        {data && data.hourly_cloud.length > 0 && (
+          <CloudTimeline
+            points={data.hourly_cloud}
+            meanPercent={night?.cloud_cover_percent ?? null}
+            trend={data.cloud_trend}
+          />
+        )}
       </div>
 
-      {night && (
-        <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", marginBottom: "0.75rem" }}>
-          <span style={chipStyle}>🌇 Sunset {fmtTime(night.sunset, tz)}</span>
-          <span style={chipStyle}>
-            🌌 Dark {night.dark_start ? `${fmtTime(night.dark_start, tz)} – ${fmtTime(night.dark_end, tz)}` : "never fully dark"}
-          </span>
-          <span style={chipStyle}>🌅 Sunrise {fmtTime(night.sunrise, tz)}</span>
-          <span style={chipStyle}>
-            {moonEmoji(night.moon_illumination)} Moon {Math.round(night.moon_illumination * 100)}%
-          </span>
+      {loading && (
+        <div style={{ fontSize: fontSize.body, color: text.secondary, marginTop: "1rem" }}>
+          Reading the sky…
+        </div>
+      )}
+      {error && (
+        <div style={{ color: "#fca5a5", fontSize: fontSize.body, marginTop: "1rem" }}>
+          {error}
         </div>
       )}
 
-      {loading && <div style={{ fontSize: "0.85rem", color: "#9ca3af" }}>Reading the sky…</div>}
-      {error && <div style={{ color: "#fca5a5", fontSize: "0.85rem" }}>{error}</div>}
+      {!loading && !error && data && (
+        <div style={{ marginTop: "1.2rem" }}>
+          {/* "Visible" not "Top" — these are what's above the horizon, and
+              the rating on each says whether it's worth pointing at. */}
+          <div
+            style={{
+              fontSize: fontSize.section,
+              fontWeight: 600,
+              marginBottom: "0.15rem",
+            }}
+          >
+            Visible targets
+          </div>
+          <div
+            style={{
+              fontSize: fontSize.small,
+              color: text.muted,
+              marginBottom: "0.6rem",
+            }}
+          >
+            Above the horizon at {fmtLocalInput(data.sample_time_local)}
+            {night?.dark_start ? ", an hour into full darkness" : ""}
+            {allPoor ? " — but poor viewing expected" : ""}
+          </div>
 
-      {!loading && !error && (
-        <>
           {visible.length === 0 ? (
-            <div style={{ fontSize: "0.85rem", color: "#9ca3af" }}>
-              Nothing on the preset list is well placed at that time — try another date.
+            <div style={{ fontSize: fontSize.body, color: text.secondary }}>
+              Nothing on the preset list is above the horizon at that time — try
+              another night.
             </div>
           ) : (
             <div
               style={{
                 display: "grid",
-                gridTemplateColumns: "repeat(auto-fill, minmax(170px, 1fr))",
-                gap: "0.5rem",
+                gridTemplateColumns: "repeat(auto-fill, minmax(185px, 1fr))",
+                gap: "0.55rem",
               }}
             >
-              {visible.map((t) => (
-                <div key={t.name} style={targetCardStyle}>
-                  <div style={{ display: "flex", alignItems: "center", gap: "0.4rem", minWidth: 0 }}>
-                    <span aria-hidden>{KIND_ICONS[t.kind]}</span>
-                    <strong
-                      style={{
-                        fontSize: "0.88rem",
-                        overflow: "hidden",
-                        textOverflow: "ellipsis",
-                        whiteSpace: "nowrap",
-                      }}
+              {visible.map((t) => {
+                const rating = t.suitability
+                  ? SUITABILITY_LABELS[t.suitability]
+                  : null;
+                return (
+                  <div key={t.name} style={targetCardStyle}>
+                    <div style={{ display: "flex", alignItems: "flex-start", gap: "0.4rem" }}>
+                      <span aria-hidden>{KIND_ICONS[t.kind]}</span>
+                      <strong style={{ fontSize: fontSize.body, lineHeight: 1.3 }}>
+                        {t.name}
+                      </strong>
+                    </div>
+
+                    {rating && (
+                      <div
+                        style={{
+                          fontSize: fontSize.small,
+                          fontWeight: 700,
+                          color: rating.color,
+                        }}
+                      >
+                        {rating.label}
+                        {t.suitability_reason ? (
+                          <span
+                            style={{ fontWeight: 400, color: text.muted }}
+                          >{` · ${t.suitability_reason}`}</span>
+                        ) : null}
+                      </div>
+                    )}
+
+                    <div style={{ fontSize: fontSize.small, color: text.secondary }}>
+                      {Math.round(t.altitude_deg)}° high · {degToCompass(t.azimuth_deg)}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => onPlan(t.name, data.sample_time_local)}
+                      style={{ ...btnPrimarySm, marginTop: "0.15rem", justifySelf: "start" }}
                     >
-                      {t.name}
-                    </strong>
+                      Plan session
+                    </button>
                   </div>
-                  <div style={{ fontSize: "0.78rem", color: "#9ca3af" }}>
-                    {Math.round(t.altitude_deg)}° high · {degToCompass(t.azimuth_deg)}
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => suggestedLocal && onPlan(t.name, suggestedLocal)}
-                    style={{ ...btnPrimarySm, marginTop: "0.15rem", justifySelf: "start" }}
-                  >
-                    Plan session
-                  </button>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
 
           {hiddenCount > 0 && (
-            <div style={{ fontSize: "0.78rem", color: "#9ca3af", marginTop: "0.6rem" }}>
-              {hiddenCount} other target{hiddenCount === 1 ? " is" : "s are"} below the horizon or washed out at that time.
+            <div style={{ fontSize: fontSize.small, color: text.muted, marginTop: "0.7rem" }}>
+              {hiddenCount} other target{hiddenCount === 1 ? " is" : "s are"} below the
+              horizon or washed out at that time.
             </div>
           )}
-        </>
+        </div>
       )}
     </section>
   );

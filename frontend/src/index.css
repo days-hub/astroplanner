@@ -1,3 +1,12 @@
+/* Padding and borders count toward a declared width. Without this, every
+   `width: 100%` input overflows its container by its own padding — which is
+   where the stray horizontal scrollbar in the drawer came from. */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
 :root {
   font-family: system-ui, Avenir, Helvetica, Arial, sans-serif;
   line-height: 1.5;
@@ -100,4 +109,21 @@ button:focus-visible {
   button {
     background-color: #f9f9f9;
   }
+}
+
+/* Tab and drawer transitions. Short enough to feel like the same page
+   re-rendering rather than a navigation. */
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+@keyframes slideIn {
+  from { transform: translateX(12px); opacity: 0; }
+  to   { transform: translateX(0);    opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  @keyframes fadeIn  { from { opacity: 1; } to { opacity: 1; } }
+  @keyframes slideIn { from { opacity: 1; } to { opacity: 1; } }
 }

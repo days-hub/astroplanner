@@ -1,0 +1,500 @@
+// src/LocationsPage.tsx
+//
+// Saved observing sites, presented as places you'd choose between rather
+// than database rows. Each card answers "where is it, how does it look
+// tonight, and when is it next usable?" — coordinates and timezone move
+// behind Edit, because nobody picks an observing site by reading decimals.
+import type React from "react";
+import { useEffect, useState } from "react";
+import api from "./api";
+import {
+  btnDangerIcon,
+  btnPrimarySm,
+  btnSecondarySm,
+  card,
+  field,
+  fontSize,
+  text,
+  verdictStyles,
+} from "./theme";
+
+type Verdict = "good" | "fair" | "poor";
+
+export interface SavedLocation {
+  id: number;
+  name: string;
+  region?: string | null;
+  latitude: number;
+  longitude: number;
+  timezone?: string | null;
+  notes?: string | null;
+}
+
+type Forecast = {
+  location_id: number;
+  conditions?: Verdict | null;
+  cloud_cover_percent?: number | null;
+  clear_from_local?: string | null;
+  clear_to_local?: string | null;
+  clear_hours: number;
+  distance_km?: number | null;
+  score?: number | null;
+  next_clear_date?: string | null;
+  next_clear_weekday?: string | null;
+  next_clear_from_local?: string | null;
+  next_clear_to_local?: string | null;
+};
+
+interface Props {
+  locations: SavedLocation[];
+  currentLocationId: number | null;
+  sessionCounts: (locationId: number) => { planned: number; completed: number };
+  dateStr: string;
+  tz: string;
+  onUseForPlanning: (id: number) => void;
+  onAdd: () => void;
+  onSave: (id: number, patch: Partial<SavedLocation>) => Promise<void>;
+  onDelete: (id: number) => void;
+}
+
+type SortMode = "current" | "best" | "near" | "az";
+
+const SORTS: { id: SortMode; label: string }[] = [
+  { id: "current", label: "Current first" },
+  { id: "best", label: "Best conditions" },
+  { id: "near", label: "Nearest" },
+  { id: "az", label: "A–Z" },
+];
+
+const VERDICT_WORD: Record<Verdict, string> = {
+  good: "Good",
+  fair: "Fair",
+  poor: "Poor",
+};
+
+function nightLabel(dateStr: string) {
+  const [y, m, d] = dateStr.split("-").map(Number);
+  return new Date(y, m - 1, d).toLocaleDateString(undefined, {
+    weekday: "long",
+    month: "long",
+    day: "numeric",
+  });
+}
+
+function to12h(hhmm?: string | null) {
+  if (!hhmm) return null;
+  const [h, m] = hhmm.split(":").map(Number);
+  const ampm = h >= 12 ? "PM" : "AM";
+  const h12 = h % 12 === 0 ? 12 : h % 12;
+  return `${h12}:${String(m).padStart(2, "0")} ${ampm}`;
+}
+
+// Default order puts the site you're planning from first and everything else
+// by how good its sky is — an alphabetical or insertion order buries the two
+// entries that actually matter tonight.
+function sortLocations(
+  locations: SavedLocation[],
+  forecasts: Record<number, Forecast>,
+  currentId: number | null,
+  mode: SortMode,
+): SavedLocation[] {
+  const score = (l: SavedLocation) => forecasts[l.id]?.score ?? -Infinity;
+  const dist = (l: SavedLocation) => forecasts[l.id]?.distance_km ?? Infinity;
+  const rows = [...locations];
+
+  switch (mode) {
+    case "best":
+      return rows.sort((a, b) => score(b) - score(a));
+    case "near":
+      return rows.sort((a, b) => dist(a) - dist(b));
+    case "az":
+      return rows.sort((a, b) => a.name.localeCompare(b.name));
+    default:
+      return rows.sort((a, b) => {
+        if (a.id === currentId) return -1;
+        if (b.id === currentId) return 1;
+        return score(b) - score(a);
+      });
+  }
+}
+
+// Both states are written out in full rather than spreading a base and
+// overriding with `undefined`. React treats an undefined longhand as "clear
+// this property", so `{...btnSecondarySm, borderColor: undefined}` wiped the
+// border colour the shorthand had just set — which is why the unselected
+// options rendered as dim, borderless text.
+const sortButtonOff: React.CSSProperties = {
+  ...btnSecondarySm,
+  border: "1px solid rgba(148,163,184,0.45)",
+  color: text.primary,
+  background: "transparent",
+};
+
+const sortButtonOn: React.CSSProperties = {
+  ...btnSecondarySm,
+  border: "1px solid rgba(147,197,253,0.7)",
+  color: "#dbeafe",
+  background: "rgba(59,130,246,0.22)",
+  fontWeight: 600,
+};
+
+const rowStyle = (current: boolean): React.CSSProperties => ({
+  borderRadius: 14,
+  border: current
+    ? "1px solid rgba(147,197,253,0.5)"
+    : "1px solid rgba(148,163,184,0.2)",
+  background: current ? "rgba(59,130,246,0.1)" : "rgba(2,6,23,0.3)",
+  padding: "0.85rem 1rem",
+});
+
+export default function LocationsPage({
+  locations,
+  currentLocationId,
+  sessionCounts,
+  dateStr,
+  tz,
+  onUseForPlanning,
+  onAdd,
+  onSave,
+  onDelete,
+}: Props) {
+  const [forecasts, setForecasts] = useState<Record<number, Forecast>>({});
+  const [expandedId, setExpandedId] = useState<number | null>(null);
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const [nameDraft, setNameDraft] = useState("");
+  const [notesDraft, setNotesDraft] = useState("");
+  const [tzDraft, setTzDraft] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [sort, setSort] = useState<SortMode>("current");
+
+  // Every site's outlook for the selected night, including when a clouded-out
+  // site is next usable — that's the question a saved location exists to
+  // answer, and it shouldn't need a button.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await api.get<{ locations: Forecast[] }>("/targets/compare", {
+          params: {
+            date_local: dateStr,
+            reference_location_id: currentLocationId ?? undefined,
+            tz,
+            include_next_clear: true,
+          },
+        });
+        if (cancelled) return;
+        const map: Record<number, Forecast> = {};
+        for (const f of res.data.locations) map[f.location_id] = f;
+        setForecasts(map);
+      } catch {
+        if (!cancelled) setForecasts({});
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [dateStr, tz, currentLocationId, locations.length]);
+
+  function startEdit(loc: SavedLocation) {
+    setEditingId(loc.id);
+    setExpandedId(loc.id);
+    setNameDraft(loc.name);
+    setNotesDraft(loc.notes ?? "");
+    setTzDraft(loc.timezone ?? "");
+  }
+
+  async function save(id: number) {
+    setSaving(true);
+    try {
+      await onSave(id, {
+        name: nameDraft.trim() || undefined,
+        notes: notesDraft.trim() || null,
+        timezone: tzDraft.trim() || null,
+      });
+      setEditingId(null);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <section style={card}>
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          gap: "0.75rem",
+          marginBottom: "0.9rem",
+        }}
+      >
+        <div>
+          <h3 style={{ fontSize: fontSize.section, fontWeight: 600, margin: 0 }}>
+            Observing Locations
+          </h3>
+          {/* These forecasts follow the Planner's date. Name the night, or
+              nobody realises the numbers move when that date does. */}
+          {/* Which night these forecasts describe is load-bearing, not a
+              caption — it reads at body size. */}
+          <div style={{ fontSize: fontSize.body, color: text.secondary, marginTop: "0.2rem" }}>
+            Conditions for {nightLabel(dateStr)}
+          </div>
+        </div>
+        <button type="button" onClick={onAdd} style={btnPrimarySm}>
+          + Add location
+        </button>
+      </div>
+
+      {locations.length > 1 && (
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: "0.4rem",
+            flexWrap: "wrap",
+            marginBottom: "0.85rem",
+          }}
+        >
+          <span style={{ fontSize: fontSize.small, color: text.secondary }}>Sort</span>
+          {SORTS.map((s) => (
+            <button
+              key={s.id}
+              type="button"
+              aria-pressed={sort === s.id}
+              onClick={() => setSort(s.id)}
+              style={sort === s.id ? sortButtonOn : sortButtonOff}
+            >
+              {s.label}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {locations.length === 0 && (
+        <div style={{ fontSize: fontSize.body, color: text.secondary }}>
+          No saved sites yet. Add one to start planning.
+        </div>
+      )}
+
+      <div style={{ display: "grid", gap: "0.6rem" }}>
+        {sortLocations(locations, forecasts, currentLocationId, sort).map((loc) => {
+          const f = forecasts[loc.id];
+          const isCurrent = loc.id === currentLocationId;
+          const counts = sessionCounts(loc.id);
+          const v = f?.conditions ? verdictStyles[f.conditions] : null;
+          const expanded = expandedId === loc.id;
+          const editing = editingId === loc.id;
+
+          return (
+            <div key={loc.id} style={rowStyle(isCurrent)}>
+              {/* Selecting a row expands it; it does NOT change where you're
+                  planning from — that's the explicit action below. */}
+              <button
+                type="button"
+                onClick={() => setExpandedId(expanded ? null : loc.id)}
+                aria-expanded={expanded}
+                style={{
+                  display: "block",
+                  width: "100%",
+                  textAlign: "left",
+                  background: "none",
+                  border: "none",
+                  padding: 0,
+                  cursor: "pointer",
+                  color: text.primary,
+                  font: "inherit",
+                }}
+              >
+                <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", flexWrap: "wrap" }}>
+                  {/* A visible affordance: without it the card reads as a
+                      static row and nobody discovers the actions. */}
+                  <span
+                    aria-hidden
+                    style={{
+                      color: text.muted,
+                      fontSize: "0.7rem",
+                      display: "inline-block",
+                      transform: expanded ? "rotate(90deg)" : "none",
+                      transition: "transform 140ms ease",
+                    }}
+                  >
+                    ▶
+                  </span>
+                  <strong style={{ fontSize: fontSize.body }}>{loc.name}</strong>
+                  {isCurrent && (
+                    <span
+                      style={{
+                        fontSize: "0.66rem",
+                        fontWeight: 700,
+                        letterSpacing: "0.06em",
+                        textTransform: "uppercase",
+                        color: "#93c5fd",
+                        border: "1px solid rgba(147,197,253,0.45)",
+                        borderRadius: 9999,
+                        padding: "0.05rem 0.4rem",
+                      }}
+                    >
+                      Current
+                    </span>
+                  )}
+                </div>
+
+                {loc.region && (
+                  <div style={{ fontSize: fontSize.small, color: text.secondary, marginTop: "0.1rem" }}>
+                    {loc.region}
+                  </div>
+                )}
+
+                <div style={{ fontSize: fontSize.small, color: text.muted, marginTop: "0.15rem" }}>
+                  {counts.planned} planned · {counts.completed} completed
+                </div>
+
+                {/* Tonight's outlook, and if it's a washout, when it's next on */}
+                <div style={{ marginTop: "0.5rem", fontSize: fontSize.body }}>
+                  {f ? (
+                    <>
+                      <span style={{ color: v ? v.color : text.muted, fontWeight: 700 }}>
+                        {f.conditions ? VERDICT_WORD[f.conditions] : "No forecast"}
+                      </span>
+                      {f.cloud_cover_percent != null && (
+                        <span style={{ color: text.secondary }}>
+                          {` · ${f.cloud_cover_percent}% cloud`}
+                        </span>
+                      )}
+                      {f.clear_from_local && (
+                        <span style={{ color: text.secondary }}>
+                          {` · clear ${to12h(f.clear_from_local)} – ${to12h(f.clear_to_local)}`}
+                        </span>
+                      )}
+                    </>
+                  ) : (
+                    <span style={{ color: text.muted }}>Checking forecast…</span>
+                  )}
+                </div>
+
+                {f && !f.clear_from_local && (
+                  <div style={{ fontSize: fontSize.small, color: text.secondary, marginTop: "0.2rem" }}>
+                    {f.next_clear_weekday
+                      ? `Next clear window: ${f.next_clear_weekday}, ${to12h(
+                          f.next_clear_from_local,
+                        )} – ${to12h(f.next_clear_to_local)}`
+                      : "No clear window in the next week"}
+                  </div>
+                )}
+              </button>
+
+              {expanded && (
+                <div style={{ marginTop: "0.75rem" }}>
+                  {!editing ? (
+                    <>
+                      {loc.notes && (
+                        <div style={{ fontSize: fontSize.small, color: text.secondary }}>
+                          {loc.notes}
+                        </div>
+                      )}
+                      <div
+                        style={{
+                          display: "flex",
+                          gap: "0.5rem",
+                          flexWrap: "wrap",
+                          marginTop: "0.7rem",
+                          alignItems: "center",
+                        }}
+                      >
+                        {/* The current site already plans from here, so its
+                            primary action is to go look — not to re-select. */}
+                        <button
+                          type="button"
+                          onClick={() => onUseForPlanning(loc.id)}
+                          style={btnPrimarySm}
+                        >
+                          {isCurrent ? "View in Planner" : "Use in Planner"}
+                        </button>
+                        <button type="button" onClick={() => startEdit(loc)} style={btnSecondarySm}>
+                          Edit
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => onDelete(loc.id)}
+                          aria-label={`Remove ${loc.name}`}
+                          style={{ ...btnDangerIcon, marginLeft: "auto", width: "auto", padding: "0.3rem 0.7rem" }}
+                        >
+                          Remove
+                        </button>
+                      </div>
+                    </>
+                  ) : (
+                    <div style={{ display: "grid", gap: "0.5rem" }}>
+                      <label style={{ fontSize: fontSize.small, color: text.secondary }}>
+                        Name
+                        <input
+                          value={nameDraft}
+                          onChange={(e) => setNameDraft(e.target.value)}
+                          style={{ ...field, marginTop: "0.2rem" }}
+                        />
+                      </label>
+                      <label style={{ fontSize: fontSize.small, color: text.secondary }}>
+                        Notes
+                        <input
+                          value={notesDraft}
+                          onChange={(e) => setNotesDraft(e.target.value)}
+                          style={{ ...field, marginTop: "0.2rem" }}
+                        />
+                      </label>
+
+                      {/* Coordinates and timezone live here rather than on the
+                          card: needed occasionally, never when choosing. */}
+                      <details>
+                        <summary
+                          style={{
+                            fontSize: fontSize.small,
+                            color: text.muted,
+                            cursor: "pointer",
+                          }}
+                        >
+                          Advanced details
+                        </summary>
+                        <div style={{ marginTop: "0.5rem", display: "grid", gap: "0.4rem" }}>
+                          <div style={{ fontSize: fontSize.small, color: text.secondary }}>
+                            Coordinates: {loc.latitude.toFixed(4)}, {loc.longitude.toFixed(4)}
+                          </div>
+                          <label style={{ fontSize: fontSize.small, color: text.secondary }}>
+                            Timezone
+                            <input
+                              value={tzDraft}
+                              onChange={(e) => setTzDraft(e.target.value)}
+                              placeholder="e.g. America/Toronto"
+                              style={{ ...field, marginTop: "0.2rem" }}
+                            />
+                          </label>
+                        </div>
+                      </details>
+
+                      <div style={{ display: "flex", gap: "0.5rem" }}>
+                        <button
+                          type="button"
+                          onClick={() => save(loc.id)}
+                          disabled={saving}
+                          style={btnPrimarySm}
+                        >
+                          {saving ? "Saving…" : "Save"}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setEditingId(null)}
+                          style={btnSecondarySm}
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </section>
+  );
+}

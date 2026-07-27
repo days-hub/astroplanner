@@ -7,7 +7,7 @@
 import type React from "react";
 import { useEffect, useState } from "react";
 import api, { apiErrorMessage } from "./api";
-import { btnPrimarySm, btnSecondarySm, card, field } from "./theme";
+import { btnPrimary, btnSecondarySm, card, field, fontSize, text } from "./theme";
 
 type AdvisorStatus = { enabled: boolean; model: string | null };
 
@@ -17,10 +17,69 @@ type AdvisorResponse = {
   data: Record<string, unknown>;
 };
 
+/** What the page already knows about the night, used to pick the prompts */
+export type AdvisorContext = {
+  cloudPercent?: number | null;
+  clearHours: number;
+  moonIllumination?: number | null;
+  moonUpFraction?: number | null;
+};
+
 interface Props {
   locationId: number;
-  locationName?: string;
   tz: string;
+  /** Night to ask about — owned by the page context bar */
+  dateStr: string;
+  /** Compact form for sitting directly under the recommendation, where it
+   *  is part of the decision rather than a widget further down the page. */
+  compact?: boolean;
+  /** Drives which one-tap questions are offered */
+  context?: AdvisorContext;
+}
+
+// Questions worth one tap. Deliberately the things a user actually wonders
+// after reading a verdict, not a feature tour — and they change with the
+// night, because "Is it worth setting up?" is the wrong question under
+// solid overcast and "Is there any usable gap?" is the wrong one under a
+// clear sky. Reacting to the forecast is what separates this from a chatbot
+// bolted onto the page.
+const PROMPTS_CLOUDED_OUT = [
+  "Is there any usable gap?",
+  "What's the next clear night?",
+  "Should I cancel my session?",
+  "Are any saved locations clearer?",
+];
+
+const PROMPTS_BRIGHT_MOON = [
+  "What can I still observe?",
+  "Is the Moon worth photographing?",
+  "Which planet is best?",
+  "Is another location better?",
+];
+
+const PROMPTS_GOOD_NIGHT = [
+  "What should I observe first?",
+  "What's the best time?",
+  "What's the faintest thing I could try?",
+  "Should I drive somewhere darker?",
+];
+
+const PROMPTS_DEFAULT = [
+  "Is it worth setting up?",
+  "What should I observe?",
+  "What's the best time?",
+  "Should I drive somewhere darker?",
+];
+
+export function presetPrompts(ctx?: AdvisorContext): string[] {
+  if (!ctx) return PROMPTS_DEFAULT;
+  // Cloud first: it overrides everything else about the night.
+  if (ctx.clearHours <= 0.5 || (ctx.cloudPercent ?? 0) >= 70) return PROMPTS_CLOUDED_OUT;
+  // Moonlight only matters when the Moon is actually up in the dark window
+  if ((ctx.moonIllumination ?? 0) * (ctx.moonUpFraction ?? 0) >= 0.5)
+    return PROMPTS_BRIGHT_MOON;
+  if ((ctx.cloudPercent ?? 100) <= 30) return PROMPTS_GOOD_NIGHT;
+  return PROMPTS_DEFAULT;
 }
 
 // The status doesn't change while the server runs — fetch it once per page load.
@@ -36,30 +95,10 @@ function fetchStatus(): Promise<AdvisorStatus> {
   return statusPromise;
 }
 
-// "2026-07-24" -> "Friday, July 24". Spelling out the night being asked
-// about keeps the date picker from silently governing the answer — otherwise
-// it's easy to type "Friday" while the picker still says Tuesday.
-function prettyDate(iso: string) {
-  const [y, m, d] = iso.split("-").map(Number);
-  if (!y || !m || !d) return iso;
-  return new Date(y, m - 1, d).toLocaleDateString(undefined, {
-    weekday: "long",
-    month: "long",
-    day: "numeric",
-  });
-}
-
-function todayInTz(tz: string) {
-  try {
-    return new Intl.DateTimeFormat("en-CA", { timeZone: tz }).format(new Date());
-  } catch {
-    return new Intl.DateTimeFormat("en-CA").format(new Date());
-  }
-}
-
 const answerStyle: React.CSSProperties = {
-  fontSize: "0.9rem",
-  lineHeight: 1.55,
+  fontSize: "0.95rem",
+  lineHeight: 1.6,
+  color: text.primary,
   whiteSpace: "pre-wrap",
   borderRadius: 12,
   border: "1px solid rgba(148,163,184,0.22)",
@@ -76,14 +115,19 @@ const dataStyle: React.CSSProperties = {
   border: "1px solid rgba(148,163,184,0.18)",
   background: "rgba(2,6,23,0.5)",
   padding: "0.6rem 0.75rem",
-  color: "#9ca3af",
+  color: text.secondary,
   maxHeight: 260,
   overflowY: "auto",
 };
 
-export default function AdvisorPanel({ locationId, locationName, tz }: Props) {
+export default function AdvisorPanel({
+  locationId,
+  tz,
+  dateStr,
+  compact,
+  context,
+}: Props) {
   const [enabled, setEnabled] = useState(false);
-  const [dateStr, setDateStr] = useState(() => todayInTz(tz));
   const [question, setQuestion] = useState("");
   const [asking, setAsking] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -109,10 +153,11 @@ export default function AdvisorPanel({ locationId, locationName, tz }: Props) {
 
   if (!enabled) return null;
 
-  async function ask(e: React.FormEvent) {
+  async function ask(e: React.FormEvent, preset?: string) {
     e.preventDefault();
-    const q = question.trim();
+    const q = (preset ?? question).trim();
     if (!q || asking) return;
+    if (preset) setQuestion(preset);
     setAsking(true);
     setError(null);
     setResult(null);
@@ -121,6 +166,7 @@ export default function AdvisorPanel({ locationId, locationName, tz }: Props) {
       const res = await api.post<AdvisorResponse>("/advisor/ask", {
         location_id: locationId,
         date_local: dateStr,
+        // The advisor always inherits the page's location and night
         question: q,
         tz,
       });
@@ -133,34 +179,29 @@ export default function AdvisorPanel({ locationId, locationName, tz }: Props) {
   }
 
   return (
-    <section style={card}>
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          gap: "0.75rem",
-          flexWrap: "wrap",
-          marginBottom: "0.6rem",
-        }}
-      >
-        <div>
-          <h3 style={{ fontSize: "1rem", fontWeight: 600, margin: 0 }}>
-            🔭 Sky advisor{locationName ? ` · ${locationName}` : ""}
+    // Compact mode drops the card chrome so it can sit inside the Tonight
+    // panel directly beneath the verdict — questioning the recommendation is
+    // part of the decision, not a separate feature further down the page.
+    <section style={compact ? { marginTop: "0.9rem" } : card}>
+      {/* No date or location control here — the page context bar owns both,
+          and the advisor answers for whatever is selected there. */}
+      {!compact && (
+        <div style={{ marginBottom: "0.7rem" }}>
+          <h3 style={{ fontSize: fontSize.section, fontWeight: 600, margin: 0 }}>
+            🔭 Sky advisor
           </h3>
-          <div style={{ fontSize: "0.78rem", color: "#9ca3af", marginTop: "0.15rem" }}>
-            Answers are grounded in this app's computed sky &amp; weather data for{" "}
-            <strong style={{ color: "#e5e7eb", fontWeight: 600 }}>{prettyDate(dateStr)}</strong>.
+          <div
+            style={{
+              fontSize: fontSize.small,
+              color: text.secondary,
+              marginTop: "0.2rem",
+            }}
+          >
+            Answers use the selected location and night, the computed sky
+            conditions, and the weather forecast — nothing else.
           </div>
         </div>
-        <input
-          type="date"
-          value={dateStr}
-          onChange={(e) => e.target.value && setDateStr(e.target.value)}
-          style={{ ...field, width: "auto" }}
-          aria-label="Night to ask about"
-        />
-      </div>
+      )}
 
       <form onSubmit={ask} style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
         <input
@@ -168,13 +209,57 @@ export default function AdvisorPanel({ locationId, locationName, tz }: Props) {
           value={question}
           onChange={(e) => setQuestion(e.target.value)}
           maxLength={500}
-          placeholder="e.g. What's worth looking at, and when? Is it worth setting up the scope?"
-          style={{ ...field, flex: "1 1 260px" }}
+          placeholder={
+            compact
+              ? "Ask about this night…"
+              : "e.g. What's worth looking at, and when? Is it worth setting up the scope?"
+          }
+          style={{
+            ...field,
+            flex: "1 1 240px",
+            // Inside the Tonight card the verdict is the headline; the ask
+            // box supports it and shouldn't compete for the same attention.
+            ...(compact
+              ? { background: "rgba(2,6,23,0.35)", border: "1px solid rgba(148,163,184,0.22)" }
+              : null),
+          }}
         />
-        <button type="submit" disabled={asking || !question.trim()} style={btnPrimarySm}>
+        <button
+          type="submit"
+          disabled={asking || !question.trim()}
+          style={compact ? btnSecondarySm : btnPrimary}
+        >
           {asking ? "Consulting the sky…" : "Ask"}
         </button>
       </form>
+
+      {/* One-tap versions of what people actually wonder after a verdict.
+          Hidden once an answer is on screen so it doesn't crowd the reply. */}
+      {!result && !asking && (
+        <div
+          style={{
+            display: "flex",
+            gap: "0.4rem",
+            flexWrap: "wrap",
+            marginTop: "0.5rem",
+          }}
+        >
+          {presetPrompts(context).map((p) => (
+            <button
+              key={p}
+              type="button"
+              onClick={(e) => ask(e, p)}
+              style={{
+                ...btnSecondarySm,
+                fontSize: "0.78rem",
+                color: text.secondary,
+              }}
+            >
+              {p}
+            </button>
+          ))}
+        </div>
+      )}
 
       {error && (
         <div style={{ color: "#fca5a5", fontSize: "0.85rem", marginTop: "0.6rem" }}>{error}</div>
@@ -191,7 +276,9 @@ export default function AdvisorPanel({ locationId, locationName, tz }: Props) {
             >
               {showData ? "Hide the data behind this" : "Show the data behind this"}
             </button>
-            <span style={{ fontSize: "0.72rem", color: "#6b7280" }}>{result.model}</span>
+            <span style={{ fontSize: fontSize.small, color: text.muted }}>
+              {result.model}
+            </span>
           </div>
           {showData && <pre style={dataStyle}>{JSON.stringify(result.data, null, 2)}</pre>}
         </div>

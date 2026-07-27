@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { BrowserRouter } from "react-router-dom";
 import LoginPage from "./LoginPage";
 import RegisterPage from "./RegisterPage";
 import Dashboard from "./Dashboard";
@@ -21,7 +22,14 @@ function App() {
     setToken(null);
   };
 
-  if (token) return <Dashboard onLogout={handleLogout} />;
+  // The router wraps only the signed-in app: login and register are a
+  // pre-auth gate, not destinations worth deep-linking into.
+  if (token)
+    return (
+      <BrowserRouter>
+        <Dashboard onLogout={handleLogout} />
+      </BrowserRouter>
+    );
 
   return page === "register" ? (
     <RegisterPage
