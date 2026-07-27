@@ -99,6 +99,46 @@ class TestNightRanking:
     def test_less_cloud_breaks_a_clear_hours_tie(self):
         assert night_rank_key("good", 4.0, 5) > night_rank_key("good", 4.0, 20)
 
+    def test_cloud_can_outweigh_a_slightly_longer_window(self):
+        """The old lexicographic key made this impossible: any longer window
+        won outright and cloud only broke exact ties, so the outlook could
+        crown the cloudiest night of the week."""
+        long_and_murky = night_rank_key("fair", 4.0, 60)
+        short_and_clear = night_rank_key("fair", 3.5, 5)
+        assert short_and_clear > long_and_murky
+
+    def test_wind_counts(self):
+        """The card prints the wind speed, so it had better be using it."""
+        calm = night_rank_key("fair", 4.0, 30, wind_kmh=5)
+        gale = night_rank_key("fair", 4.0, 30, wind_kmh=45)
+        assert calm > gale
+
+    def test_moonlight_counts(self):
+        dark = night_rank_key("fair", 4.0, 30, moon_illumination=0.0, moon_up_fraction=0.0)
+        washed = night_rank_key("fair", 4.0, 30, moon_illumination=1.0, moon_up_fraction=1.0)
+        assert dark > washed
+
+    def test_outlook_and_location_ranking_agree(self):
+        """Both surfaces answer "which sky is better?" and must not use
+        different rules to do it."""
+        from app.core.observing import sky_score
+
+        args = ("fair", 3.7, 22)
+        kwargs = dict(moon_illumination=0.9, moon_up_fraction=0.8, wind_kmh=18.0)
+        assert night_rank_key(*args, **kwargs) == sky_score(*args, **kwargs)
+
+    def test_the_windy_long_window_case(self):
+        """Straight from the outlook screenshot: Tuesday had the longest
+        window but the most cloud and by far the most wind; Thursday was
+        calmer and clearer. Thursday is the better night."""
+        tuesday = night_rank_key(
+            "fair", 4.0, 37, moon_illumination=1.0, moon_up_fraction=1.0, wind_kmh=20.9
+        )
+        thursday = night_rank_key(
+            "fair", 3.1, 26, moon_illumination=0.98, moon_up_fraction=1.0, wind_kmh=6.2
+        )
+        assert thursday > tuesday
+
     def test_ranking_picks_the_best_of_a_week(self):
         week = [
             ("Mon", "poor", 0.0, 95),

@@ -719,7 +719,14 @@ async def outlook(
     rankable = [n for n in out if n.conditions is not None]
     best = max(
         rankable,
-        key=lambda n: night_rank_key(n.conditions, n.clear_hours, n.cloud_cover_percent),
+        key=lambda n: night_rank_key(
+            n.conditions,
+            n.clear_hours,
+            n.cloud_cover_percent,
+            moon_illumination=n.moon_illumination,
+            moon_up_fraction=n.moon_up_fraction or 0.0,
+            wind_kmh=n.wind_kmh,
+        ),
         default=None,
     )
     # Only call something "best" if it's actually worth going out for

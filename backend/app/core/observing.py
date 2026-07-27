@@ -236,13 +236,28 @@ def night_rank_key(
     conditions: Optional[str],
     clear_hours: float,
     cloud_cover_percent: Optional[int],
-) -> tuple[int, float, float]:
-    """Sort key for picking the best night: verdict first, then how many
-    clear hours it actually offers, then least cloud as a tiebreak."""
-    return (
-        _VERDICT_SCORE.get(conditions or "poor", 0),
+    moon_illumination: float = 0.0,
+    moon_up_fraction: float = 0.0,
+    wind_kmh: Optional[float] = None,
+) -> float:
+    """Sort key for picking the best night — the same scorer used to rank
+    observing sites, so the outlook and the location comparison can't
+    disagree about what "best" means.
+
+    This was a lexicographic (verdict, hours, cloud) tuple, which had two
+    faults. Cloud never actually competed: any longer window won outright
+    and the cloud figure only broke exact ties in hours, so the outlook
+    could crown the cloudiest night of the week and print the contradicting
+    number beside the badge. And wind and moonlight were ignored entirely
+    despite both being displayed on the card.
+    """
+    return sky_score(
+        conditions,
         clear_hours,
-        -(cloud_cover_percent if cloud_cover_percent is not None else 100),
+        cloud_cover_percent,
+        moon_illumination=moon_illumination,
+        moon_up_fraction=moon_up_fraction,
+        wind_kmh=wind_kmh,
     )
 
 
