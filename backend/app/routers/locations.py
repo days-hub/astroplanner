@@ -24,12 +24,12 @@ def create_location(
 ):
     location = Location(
         name=location_in.name,
+        # Comes from the geocoder when the site was added by search; the
+        # Locations page shows it instead of coordinates.
+        region=location_in.region,
         latitude=location_in.latitude,
         longitude=location_in.longitude,
-
-        # NEW ✅
         timezone=location_in.timezone,
-
         notes=location_in.notes,
         owner_id=current_user.id,
     )
@@ -44,10 +44,13 @@ def list_locations(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    # Oldest first. The frontend defaults to the first site in this list, and
+    # newest-first meant landing on whatever was added last — typically the
+    # site with no history — instead of the home base you set up first.
     locations = (
         db.query(Location)
         .filter(Location.owner_id == current_user.id)
-        .order_by(Location.id.desc())
+        .order_by(Location.id.asc())
         .all()
     )
     return locations

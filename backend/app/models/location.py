@@ -14,6 +14,11 @@ class Location(Base):
 
     timezone = Column(String, nullable=True)  # e.g. "America/Toronto", "Australia/Sydney"
 
+    # "Ontario, Canada" — captured from the geocoder when a site is added, so
+    # the Locations page can say where a place is without making the user
+    # read coordinates. Null for anything created before search-first entry.
+    region = Column(String, nullable=True)
+
     notes = Column(Text, nullable=True)
 
     owner_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)

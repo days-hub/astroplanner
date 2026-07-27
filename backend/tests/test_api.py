@@ -50,6 +50,47 @@ class TestAuth:
         assert client.get("/planner/ics").status_code == 401
 
 
+class TestLocations:
+    def test_region_round_trips(self, client, make_user):
+        alice = make_user()
+        r = client.post(
+            "/locations/",
+            json={
+                "name": "Torrance Barrens",
+                "region": "Ontario, Canada",
+                "latitude": 44.93,
+                "longitude": -79.50,
+            },
+            headers=alice,
+        )
+        assert r.status_code == 201
+        # The geocoder's region has to survive create, or the Locations page
+        # falls back to showing coordinates.
+        assert r.json()["region"] == "Ontario, Canada"
+
+        loc_id = r.json()["id"]
+        r = client.put(
+            f"/locations/{loc_id}",
+            json={"notes": "worth the drive"},
+            headers=alice,
+        )
+        assert r.status_code == 200
+        assert r.json()["region"] == "Ontario, Canada"
+
+    def test_listed_oldest_first(self, client, make_user):
+        alice = make_user()
+        names = ["Home", "Second site", "Third site"]
+        for n in names:
+            client.post(
+                "/locations/",
+                json={"name": n, "latitude": 43.7, "longitude": -79.4},
+                headers=alice,
+            )
+        # The frontend defaults to the first entry, so it must be the site
+        # the user set up first, not the one they added most recently.
+        assert [l["name"] for l in client.get("/locations/", headers=alice).json()] == names
+
+
 class TestOwnershipIsolation:
     def test_cannot_read_other_users_location(self, client, make_user, make_location):
         alice = make_user()

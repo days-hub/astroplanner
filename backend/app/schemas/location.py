@@ -4,6 +4,7 @@ from pydantic import BaseModel, Field
 
 class LocationBase(BaseModel):
     name: str
+    region: Optional[str] = None
     latitude: Optional[float] = Field(default=None, ge=-90, le=90)
     longitude: Optional[float] = Field(default=None, ge=-180, le=180)
     timezone: Optional[str] = None
@@ -19,6 +20,7 @@ class LocationCreate(LocationBase):
 
 class LocationUpdate(BaseModel):
     name: Optional[str] = None
+    region: Optional[str] = None
     latitude: Optional[float] = Field(default=None, ge=-90, le=90)
     longitude: Optional[float] = Field(default=None, ge=-180, le=180)
     timezone: Optional[str] = None
