@@ -47,7 +47,7 @@ def _require_demo_mode() -> None:
         )
 
 
-SEED_TZ = ZoneInfo("America/Toronto")  # both seeded locations are in this zone
+SEED_TZ = ZoneInfo("America/Toronto")  # every seeded site is in this zone
 
 
 def _evening_utc(days_offset: int, hour: int = 22, minute: int = 30) -> datetime:
@@ -65,31 +65,87 @@ def _evening_utc(days_offset: int, hour: int = 22, minute: int = 30) -> datetime
 
 
 def _seed_demo_data(db: Session, user: User) -> None:
-    """Give the visitor a populated app: two locations with contrast
-    (city vs dark-sky), an upcoming planned session, and completed
-    sessions with observation logs so every page renders with data."""
+    """Give the visitor a populated app: several locations spread far enough
+    apart to get genuinely different forecasts (which is what makes the
+    best-site recommendation and the comparison worth looking at), an
+    upcoming planned session, and completed sessions with observation logs
+    so every page renders with data."""
     toronto = Location(
-        name="Toronto, Canada",
+        name="Toronto",
+        region="Ontario, Canada",
         latitude=43.71,
         longitude=-79.40,
         timezone="America/Toronto",
-        notes="Demo city location — decent for the Moon and planets.",
+        notes="Home base — heavy light pollution, fine for the Moon and planets.",
         owner=user,
     )
     barrens = Location(
         name="Torrance Barrens Dark-Sky Preserve",
+        region="Ontario, Canada",
         latitude=44.93,
         longitude=-79.50,
         timezone="America/Toronto",
-        notes="Demo dark-sky site — Bortle 3-ish, worth the drive for faint targets.",
+        notes="Worth the drive for faint targets. Bortle 3-ish.",
         owner=user,
     )
-    db.add_all([toronto, barrens])
+    algonquin = Location(
+        name="Algonquin Provincial Park",
+        region="Ontario, Canada",
+        latitude=45.58,
+        longitude=-78.35,
+        timezone="America/Toronto",
+        notes="Darkest site saved. Long drive, so only for a genuinely clear night.",
+        owner=user,
+    )
+    # Far enough west to often sit under a different weather system, which
+    # makes the "is anywhere clearer?" question a real one
+    manitoulin = Location(
+        name="Manitoulin Island",
+        region="Ontario, Canada",
+        latitude=45.77,
+        longitude=-82.26,
+        timezone="America/Toronto",
+        notes="Dark skies over the lake when the forecast goes against the east.",
+        owner=user,
+    )
+    db.add_all([toronto, barrens, algonquin, manitoulin])
 
-    upcoming = ObservationSession(
+    # Enough history that every state the app can render is on screen
+    # somewhere: nights still ahead, nights that happened and were logged,
+    # and one that got clouded out. Toronto carries one of each, because
+    # it's the site the demo lands on.
+    saturn = ObservationSession(
         target_name="Saturn",
         status="planned",
-        scheduled_start=_evening_utc(3),
+        scheduled_start=_evening_utc(2),
+        owner=user,
+        location=toronto,
+    )
+    m57 = ObservationSession(
+        target_name="Ring Nebula (M57)",
+        status="planned",
+        scheduled_start=_evening_utc(5, hour=23, minute=0),
+        owner=user,
+        location=barrens,
+    )
+    albireo = ObservationSession(
+        target_name="Albireo",
+        status="planned",
+        scheduled_start=_evening_utc(9),
+        owner=user,
+        location=manitoulin,
+    )
+    mars = ObservationSession(
+        target_name="Mars",
+        status="cancelled",
+        scheduled_start=_evening_utc(-4),
+        owner=user,
+        location=toronto,
+    )
+    jupiter = ObservationSession(
+        target_name="Jupiter",
+        status="completed",
+        scheduled_start=_evening_utc(-23, hour=23, minute=15),
         owner=user,
         location=toronto,
     )
@@ -100,27 +156,26 @@ def _seed_demo_data(db: Session, user: User) -> None:
         owner=user,
         location=barrens,
     )
-    jupiter = ObservationSession(
-        target_name="Jupiter",
+    m13 = ObservationSession(
+        target_name="Hercules Cluster (M13)",
         status="completed",
-        scheduled_start=_evening_utc(-23, hour=23, minute=15),
+        scheduled_start=_evening_utc(-34, hour=23, minute=45),
         owner=user,
-        location=toronto,
+        location=algonquin,
     )
-    db.add_all([upcoming, m31, jupiter])
+    m8 = ObservationSession(
+        target_name="Lagoon Nebula (M8)",
+        status="completed",
+        scheduled_start=_evening_utc(-47, hour=23, minute=30),
+        owner=user,
+        location=manitoulin,
+    )
+    db.add_all([saturn, m57, albireo, mars, jupiter, m31, m13, m8])
 
+    # Seeing/transparency must come from the same vocabulary the log form
+    # offers, or the saved value renders as nothing selected when you open it.
     db.add_all(
         [
-            ObservationLog(
-                session=m31,
-                notes=(
-                    "Core easily visible in the 8SE at 49x; dust lane suspected "
-                    "with averted vision. Dark skies make all the difference."
-                ),
-                seeing="average",
-                transparency="good",
-                rating=4,
-            ),
             ObservationLog(
                 session=jupiter,
                 notes=(
@@ -128,8 +183,38 @@ def _seed_demo_data(db: Session, user: User) -> None:
                     "Seeing steadied after midnight."
                 ),
                 seeing="good",
-                transparency="average",
+                transparency="fair",
                 rating=5,
+            ),
+            ObservationLog(
+                session=m31,
+                notes=(
+                    "Core easily visible in the 8SE at 49x; dust lane suspected "
+                    "with averted vision. Dark skies make all the difference."
+                ),
+                seeing="fair",
+                transparency="good",
+                rating=4,
+            ),
+            ObservationLog(
+                session=m13,
+                notes=(
+                    "Resolved to the core at 150x — the best I've seen it. "
+                    "No dew all night and the Milky Way was casting shadows."
+                ),
+                seeing="excellent",
+                transparency="excellent",
+                rating=5,
+            ),
+            ObservationLog(
+                session=m8,
+                notes=(
+                    "Bright bar and the open cluster obvious at 32x. Haze off "
+                    "the lake cost some contrast; worth a return trip."
+                ),
+                seeing="fair",
+                transparency="fair",
+                rating=3,
             ),
         ]
     )

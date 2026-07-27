@@ -48,15 +48,38 @@ class TestDemoAccount:
         headers = _start_demo(client)
 
         locations = client.get("/locations/", headers=headers).json()
-        assert len(locations) == 2
+        # Several sites, far enough apart to get different forecasts — that's
+        # what makes the best-site recommendation meaningful
+        assert len(locations) >= 4
         names = {loc["name"] for loc in locations}
-        assert "Toronto, Canada" in names
+        assert "Toronto" in names
+        assert "Torrance Barrens Dark-Sky Preserve" in names
 
         sessions = client.get("/sessions/", headers=headers).json()
-        assert len(sessions) == 3
-        statuses = [s["status"] for s in sessions]
-        assert statuses.count("planned") == 1
-        assert statuses.count("completed") == 2
+        # Counts are free to change; what the demo has to guarantee is that
+        # every state the UI can render is represented, so no screen is empty.
+        statuses = set(s["status"] for s in sessions)
+        assert {"planned", "completed", "cancelled"} <= statuses, statuses
+
+        # The site the demo lands on needs one of each, or the first screen
+        # a visitor sees under-sells the app.
+        toronto = next(l for l in locations if l["name"] == "Toronto")
+        home = [s for s in sessions if s["location_id"] == toronto["id"]]
+        assert {"planned", "completed", "cancelled"} <= set(s["status"] for s in home)
+
+        # Completed nights carry logs, and those logs use the same
+        # seeing/transparency vocabulary the log form offers — a value
+        # outside it saves fine and then renders as nothing selected.
+        allowed = {"poor", "fair", "good", "excellent"}
+        logged = 0
+        for s in (x for x in sessions if x["status"] == "completed"):
+            logs = client.get(f"/sessions/{s['id']}/logs", headers=headers).json()
+            for log in logs:
+                logged += 1
+                assert log["seeing"] in allowed, log["seeing"]
+                assert log["transparency"] in allowed, log["transparency"]
+                assert 1 <= log["rating"] <= 5
+        assert logged >= 3
 
     def test_seeded_sessions_land_at_night(self, client, demo_mode):
         """Seeded sessions must be at a believable observing hour.
@@ -69,7 +92,7 @@ class TestDemoAccount:
 
         headers = _start_demo(client)
         sessions = client.get("/sessions/", headers=headers).json()
-        assert len(sessions) == 3
+        assert sessions
 
         tz = ZoneInfo("America/Toronto")
         for s in sessions:
