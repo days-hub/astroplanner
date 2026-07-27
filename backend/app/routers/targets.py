@@ -1,4 +1,5 @@
-from datetime import date, datetime, timedelta, timezone
+import asyncio
+from datetime import date, datetime, time, timedelta, timezone
 from typing import List, Literal, Optional
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -9,6 +10,20 @@ from sqlalchemy.orm import Session as DBSession
 from skyfield.api import load, wgs84, Star
 from skyfield import almanac
 
+from app.core.observing import (
+    cloud_band,
+    describe_cloud_trend,
+    recommend_night,
+    haversine_km,
+    choose_location,
+    sky_score,
+    find_clear_window,
+    night_rank_key,
+    observing_focus,
+    rate_target,
+    summarize_conditions,
+)
+from app.core.weather_client import get_hourly_forecast
 from app.db.database import get_db
 from app.models.location import Location
 from app.core.deps import get_current_user
@@ -64,6 +79,75 @@ class NightInfo(BaseModel):
     dark_end: Optional[datetime] = None
     sunrise: Optional[datetime] = None
     moon_illumination: float
+    # Headline verdict for the dashboard. Thresholds live here rather than in
+    # the UI so they're testable and consistent across clients.
+    conditions: Optional[Literal["good", "fair", "poor"]] = None
+    conditions_summary: Optional[str] = None
+    cloud_cover_percent: Optional[int] = None  # mean across the dark window
+    moon_up_fraction: Optional[float] = None  # of the dark window, 0..1
+
+class RatedTarget(VisibleTarget):
+    """A visible target plus how worthwhile it actually is tonight."""
+    suitability: Optional[Literal["good", "fair", "poor", "very_poor"]] = None
+    suitability_reason: Optional[str] = None
+
+
+class CloudPoint(BaseModel):
+    time_local: str  # "HH:MM" in the location's timezone
+    cloud_cover: int
+
+
+class Recommendation(BaseModel):
+    """The bottom line — should you go out tonight, and if not, when."""
+    headline: str
+    detail: str
+    next_better_date: Optional[str] = None
+    next_better_weekday: Optional[str] = None
+
+
+class TonightSummary(BaseModel):
+    """Everything the dashboard's Tonight card needs, in one round trip and
+    one weather fetch — it previously stitched /night and /visible together
+    and had no forecast to rate targets against."""
+    night: NightInfo
+    sample_time_local: str  # "YYYY-MM-DDTHH:mm", when targets were computed
+    targets: List[RatedTarget]
+    hourly_cloud: List[CloudPoint]
+    clear_from_local: Optional[str] = None
+    clear_to_local: Optional[str] = None
+    clear_hours: float = 0.0
+    focus: Optional[str] = None
+    cloud_trend: Optional[str] = None  # plain-language shape of the night
+    recommendation: Optional[Recommendation] = None
+
+
+class NightOutlook(BaseModel):
+    """One night in the multi-night outlook."""
+    date: str  # "YYYY-MM-DD"
+    weekday: str  # "Tuesday"
+    conditions: Optional[Literal["good", "fair", "poor"]] = None
+    conditions_summary: Optional[str] = None
+    cloud_cover_percent: Optional[int] = None
+    dark_start_local: Optional[str] = None  # "HH:MM"
+    dark_end_local: Optional[str] = None
+    clear_from_local: Optional[str] = None  # longest clear-enough run
+    clear_to_local: Optional[str] = None
+    clear_hours: float = 0.0
+    moon_illumination: float
+    moon_up_fraction: Optional[float] = None
+    moonset_local: Optional[str] = None  # when it drops below the horizon
+    temperature_c: Optional[float] = None  # mean across the dark window
+    wind_kmh: Optional[float] = None
+    focus: Optional[str] = None  # deep-sky | mixed | planetary | none
+    focus_summary: Optional[str] = None
+    best_targets: List[str] = []
+
+
+class OutlookResponse(BaseModel):
+    timezone: str
+    nights: List[NightOutlook]
+    best_date: Optional[str] = None  # the night worth driving out for
+
 
 def _to_utc(dt: datetime) -> datetime:
     # If naive, assume it's UTC (your frontend sends ISO 'Z' anyway)
@@ -97,8 +181,35 @@ def _score(alt: float, sun_alt: float, elong: Optional[float], kind: str) -> flo
         s += 5.0  # bump “popular” targets a bit
     return s
 
+def _moon_up_fraction(latitude: float, longitude: float,
+                      start_utc: datetime, end_utc: datetime) -> float:
+    """Fraction of the window the Moon spends above the horizon.
+
+    Illumination alone is a poor proxy for interference — a full Moon that
+    sets an hour into darkness barely matters, while a half Moon up all
+    night does. Sampled every 20 minutes, which is finer than the verdict
+    thresholds need.
+    """
+    total = (end_utc - start_utc).total_seconds()
+    if total <= 0:
+        return 0.0
+
+    observer = wgs84.latlon(latitude, longitude)
+    topo = earth + observer
+    moon = eph["moon"]
+
+    steps = max(2, int(total // 1200))
+    up = 0
+    for i in range(steps + 1):
+        t = ts.from_datetime(start_utc + timedelta(seconds=total * i / steps))
+        alt, _, _ = topo.at(t).observe(moon).apparent().altaz()
+        if float(alt.degrees) > 0:
+            up += 1
+    return up / (steps + 1)
+
+
 @router.get("/night", response_model=NightInfo)
-def night_info(
+async def night_info(
     location_id: int,
     date_local: str,                 # "YYYY-MM-DD" in the location's timezone
     tz: Optional[str] = None,
@@ -127,7 +238,54 @@ def night_info(
     except ZoneInfoNotFoundError:
         raise HTTPException(status_code=400, detail="Invalid timezone")
 
-    return compute_night_info(loc.latitude, loc.longitude, date_local, tz_name, zone)
+    night = compute_night_info(loc.latitude, loc.longitude, date_local, tz_name, zone)
+    await add_conditions(night, loc.latitude, loc.longitude, zone)
+    return night
+
+
+def _night_window(night: NightInfo, zone: ZoneInfo) -> tuple[datetime, datetime]:
+    """The stretch of the night worth forecasting: full darkness if there is
+    any, else sunset→sunrise, else a generic evening."""
+    day = datetime.fromisoformat(night.date)
+    start = night.dark_start or night.sunset or day.replace(
+        hour=21, minute=0, tzinfo=zone
+    ).astimezone(timezone.utc)
+    end = night.dark_end or night.sunrise or start + timedelta(hours=6)
+    return start, end
+
+
+async def add_conditions(
+    night: NightInfo, latitude: float, longitude: float, zone: ZoneInfo
+) -> list[dict]:
+    """Fill in the verdict fields on an already-computed NightInfo, and hand
+    back the hourly rows so a caller can reuse them without a second fetch.
+
+    Kept separate from compute_night_info so that stays pure astronomy with
+    no network call — the advisor builds its own forecast and doesn't need
+    this, and a forecast outage degrades the badge instead of the endpoint.
+    """
+    window_start, window_end = _night_window(night, zone)
+
+    try:
+        rows = await get_hourly_forecast(latitude, longitude, window_start, window_end)
+    except Exception:  # noqa: BLE001 - a forecast outage shouldn't 500 the page
+        return []
+
+    clouds = [r["cloud_cover"] for r in rows if r.get("cloud_cover") is not None]
+    if not clouds:
+        return rows
+
+    night.cloud_cover_percent = round(sum(clouds) / len(clouds))
+    night.moon_up_fraction = round(
+        _moon_up_fraction(latitude, longitude, window_start, window_end), 3
+    )
+    night.conditions, night.conditions_summary = summarize_conditions(
+        has_darkness=night.dark_start is not None,
+        cloud_cover_percent=night.cloud_cover_percent,
+        moon_illumination=night.moon_illumination,
+        moon_up_fraction=night.moon_up_fraction,
+    )
+    return rows
 
 
 def compute_night_info(
@@ -181,6 +339,566 @@ def compute_night_info(
         sunrise=sunrise,
         moon_illumination=moon_frac,
     )
+
+
+class LocationComparison(BaseModel):
+    location_id: int
+    name: str
+    region: Optional[str] = None
+    # When this night is a write-off, when the site is next usable. Only
+    # computed when asked for — it costs a wider forecast per location.
+    next_clear_date: Optional[str] = None
+    next_clear_weekday: Optional[str] = None
+    next_clear_from_local: Optional[str] = None
+    next_clear_to_local: Optional[str] = None
+    distance_km: Optional[float] = None  # straight-line, not driving
+    conditions: Optional[Literal["good", "fair", "poor"]] = None
+    conditions_summary: Optional[str] = None
+    cloud_cover_percent: Optional[int] = None
+    dark_start_local: Optional[str] = None
+    dark_end_local: Optional[str] = None
+    clear_from_local: Optional[str] = None
+    clear_to_local: Optional[str] = None
+    clear_hours: float = 0.0
+    moon_illumination: float = 0.0
+    wind_kmh: Optional[float] = None  # mean across the dark window
+    focus: Optional[str] = None
+    score: float = 0.0
+
+
+class LocationRecommendation(BaseModel):
+    """What to actually do about the saved sites tonight."""
+    # "stay" | "switch" | "none_usable" — the UI headline follows from this,
+    # so it never has to force a competing site into the sentence.
+    status: Literal["stay", "switch", "none_usable"]
+    location_id: Optional[int] = None
+    # The numbers behind the call, so the user can check it
+    reason: str = ""
+
+
+class CompareResponse(BaseModel):
+    date: str
+    timezone: str
+    reference_location_id: Optional[int] = None
+    recommendation: Optional[LocationRecommendation] = None
+    locations: List[LocationComparison]
+
+
+@router.get("/compare", response_model=CompareResponse)
+async def compare_locations(
+    date_local: str,
+    reference_location_id: Optional[int] = None,
+    tz: Optional[str] = None,
+    include_next_clear: bool = False,
+    db: DBSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Rank the user's saved sites for one night.
+
+    Answers "it's cloudy at home — is anywhere I know clearer tonight?".
+    Distances are straight-line from the reference location; computing
+    driving time would need a routing service, so it isn't claimed.
+    """
+    locs = (
+        db.query(Location)
+        .filter(Location.owner_id == current_user.id)
+        .filter(Location.latitude.isnot(None), Location.longitude.isnot(None))
+        .all()
+    )
+    if not locs:
+        raise HTTPException(status_code=404, detail="No locations with coordinates")
+
+    reference = next((l for l in locs if l.id == reference_location_id), None)
+
+    tz_name = tz or (reference.timezone if reference else None) or locs[0].timezone
+    if not tz_name:
+        raise HTTPException(status_code=400, detail="Timezone required")
+    try:
+        zone = ZoneInfo(tz_name)
+    except ZoneInfoNotFoundError:
+        raise HTTPException(status_code=400, detail="Invalid timezone")
+
+    async def summarize(loc: Location) -> LocationComparison:
+        night = compute_night_info(
+            loc.latitude, loc.longitude, date_local, tz_name, zone
+        )
+        entry = LocationComparison(
+            location_id=loc.id,
+            name=loc.name,
+            region=loc.region,
+            moon_illumination=round(night.moon_illumination, 3),
+            dark_start_local=night.dark_start.astimezone(zone).strftime("%H:%M")
+            if night.dark_start else None,
+            dark_end_local=night.dark_end.astimezone(zone).strftime("%H:%M")
+            if night.dark_end else None,
+        )
+        if reference:
+            entry.distance_km = round(
+                haversine_km(
+                    reference.latitude, reference.longitude, loc.latitude, loc.longitude
+                ),
+                1,
+            )
+
+        rows = await add_conditions(night, loc.latitude, loc.longitude, zone)
+        entry.conditions = night.conditions
+        entry.conditions_summary = night.conditions_summary
+        entry.cloud_cover_percent = night.cloud_cover_percent
+
+        if rows:
+            win_start, win_end = _night_window(night, zone)
+            window = find_clear_window(rows, win_start, win_end)
+            if window:
+                entry.clear_from_local = window[0].astimezone(zone).strftime("%H:%M")
+                entry.clear_to_local = window[1].astimezone(zone).strftime("%H:%M")
+                entry.clear_hours = round(
+                    (window[1] - window[0]).total_seconds() / 3600, 1
+                )
+            entry.focus, _ = observing_focus(
+                cloud_cover_percent=night.cloud_cover_percent,
+                moon_illumination=night.moon_illumination,
+                moon_up_fraction=night.moon_up_fraction or 0.0,
+                has_darkness=night.dark_start is not None,
+            )
+
+        # NightInfo carries no wind, so average it off the same hourly rows
+        # the clear-window search already fetched rather than asking again.
+        winds = [r["wind_speed"] for r in rows if r.get("wind_speed") is not None]
+        entry.wind_kmh = round(sum(winds) / len(winds), 1) if winds else None
+
+        entry.score = sky_score(
+            entry.conditions,
+            entry.clear_hours,
+            entry.cloud_cover_percent,
+            moon_illumination=night.moon_illumination,
+            moon_up_fraction=night.moon_up_fraction or 0.0,
+            wind_kmh=entry.wind_kmh,
+        )
+
+        # "Next clear window" only means anything when tonight has none
+        if include_next_clear and entry.clear_hours == 0:
+            found = await _next_clear_window(
+                loc.latitude, loc.longitude, date_local, tz_name, zone
+            )
+            if found:
+                day, start, end = found
+                entry.next_clear_date = day.isoformat()
+                entry.next_clear_weekday = day.strftime("%A")
+                entry.next_clear_from_local = start.astimezone(zone).strftime("%H:%M")
+                entry.next_clear_to_local = end.astimezone(zone).strftime("%H:%M")
+        return entry
+
+    # One forecast request per site, in parallel rather than in series
+    results = await asyncio.gather(*(summarize(l) for l in locs))
+    results = sorted(results, key=lambda r: r.score, reverse=True)
+
+    choice = choose_location(
+        [
+            {
+                "id": r.location_id,
+                "name": r.name,
+                "score": r.score,
+                "clear_hours": r.clear_hours,
+                "cloud_cover_percent": r.cloud_cover_percent,
+                "distance_km": r.distance_km,
+            }
+            for r in results
+        ],
+        reference.id if reference else None,
+    )
+
+    return CompareResponse(
+        date=date_local,
+        timezone=tz_name,
+        reference_location_id=reference.id if reference else None,
+        recommendation=LocationRecommendation(**choice),
+        locations=list(results),
+    )
+
+
+async def _next_clear_window(
+    latitude: float,
+    longitude: float,
+    from_date: str,
+    tz_name: str,
+    zone: ZoneInfo,
+    lookahead: int = 6,
+) -> Optional[tuple[date, datetime, datetime]]:
+    """First upcoming night at this site with a usable gap in the cloud.
+
+    One forecast request covers the whole span; each night is then sliced
+    out of it, so this costs one HTTP call per location rather than one per
+    night. Returns (day, window start, window end) or None.
+    """
+    start_day = date.fromisoformat(from_date)
+    span_start = datetime.combine(
+        start_day + timedelta(days=1), time(12, 0), tzinfo=zone
+    ).astimezone(timezone.utc)
+
+    try:
+        rows = await get_hourly_forecast(
+            latitude, longitude, span_start, span_start + timedelta(days=lookahead + 1)
+        )
+    except Exception:  # noqa: BLE001 - no suggestion beats a wrong one
+        return None
+    if not rows:
+        return None
+
+    for offset in range(1, lookahead + 1):
+        day = start_day + timedelta(days=offset)
+        night = compute_night_info(latitude, longitude, day.isoformat(), tz_name, zone)
+        win_start, win_end = _night_window(night, zone)
+        window = find_clear_window(rows, win_start, win_end)
+        if window:
+            return day, window[0], window[1]
+    return None
+
+
+def _moonset_after(latitude: float, longitude: float,
+                   start_utc: datetime, end_utc: datetime) -> Optional[datetime]:
+    """When the Moon drops below the horizon within the window, if it does.
+
+    "Moon sets at 11:08 PM" is far more actionable than "Moon 87%", because
+    it tells you when the deep-sky half of the night actually begins.
+    """
+    observer = wgs84.latlon(latitude, longitude)
+    topo = earth + observer
+    moon = eph["moon"]
+
+    def alt_at(dt: datetime) -> float:
+        return float(topo.at(ts.from_datetime(dt)).observe(moon).apparent().altaz()[0].degrees)
+
+    step = timedelta(minutes=15)
+    t = start_utc
+    prev_alt = alt_at(t)
+    while t < end_utc:
+        t = min(t + step, end_utc)
+        alt = alt_at(t)
+        if prev_alt > 0 >= alt:
+            return t
+        prev_alt = alt
+    return None
+
+
+@router.get("/outlook", response_model=OutlookResponse)
+async def outlook(
+    location_id: int,
+    start_date: Optional[str] = None,
+    nights: int = 7,
+    tz: Optional[str] = None,
+    db: DBSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Multi-night outlook, so finding a good night doesn't mean clicking
+    through dates one at a time.
+
+    The whole span is fetched from the weather API in a single request and
+    sliced per night, rather than one call per night.
+    """
+    nights = max(1, min(nights, 10))  # Open-Meteo's useful hourly range
+
+    loc = (
+        db.query(Location)
+        .filter(Location.id == location_id, Location.owner_id == current_user.id)
+        .first()
+    )
+    if not loc:
+        raise HTTPException(status_code=404, detail="Location not found")
+    if loc.latitude is None or loc.longitude is None:
+        raise HTTPException(
+            status_code=400,
+            detail="Location has no coordinates; set latitude/longitude first",
+        )
+
+    tz_name = tz or loc.timezone
+    if not tz_name:
+        raise HTTPException(status_code=400, detail="Timezone required")
+    try:
+        zone = ZoneInfo(tz_name)
+    except ZoneInfoNotFoundError:
+        raise HTTPException(status_code=400, detail="Invalid timezone")
+
+    try:
+        first_day = (
+            date.fromisoformat(start_date)
+            if start_date
+            else datetime.now(zone).date()
+        )
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid start_date (YYYY-MM-DD)")
+
+    # One forecast covering every night in the span
+    span_start = datetime.combine(first_day, time(12, 0), tzinfo=zone).astimezone(timezone.utc)
+    span_end = span_start + timedelta(days=nights + 1)
+    try:
+        rows = await get_hourly_forecast(loc.latitude, loc.longitude, span_start, span_end)
+    except Exception:  # noqa: BLE001 - degrade to astronomy-only rather than 500
+        rows = []
+
+    out: List[NightOutlook] = []
+    for offset in range(nights):
+        day = first_day + timedelta(days=offset)
+        night = compute_night_info(
+            loc.latitude, loc.longitude, day.isoformat(), tz_name, zone
+        )
+        win_start, win_end = _night_window(night, zone)
+
+        night_rows = [
+            r for r in rows
+            if win_start <= datetime.fromisoformat(r["time"]) <= win_end
+        ]
+        clouds = [r["cloud_cover"] for r in night_rows if r.get("cloud_cover") is not None]
+        temps = [r["temperature"] for r in night_rows if r.get("temperature") is not None]
+        winds = [r["wind_speed"] for r in night_rows if r.get("wind_speed") is not None]
+
+        entry = NightOutlook(
+            date=day.isoformat(),
+            weekday=day.strftime("%A"),
+            moon_illumination=round(night.moon_illumination, 3),
+            dark_start_local=night.dark_start.astimezone(zone).strftime("%H:%M")
+            if night.dark_start else None,
+            dark_end_local=night.dark_end.astimezone(zone).strftime("%H:%M")
+            if night.dark_end else None,
+            temperature_c=round(sum(temps) / len(temps), 1) if temps else None,
+            wind_kmh=round(sum(winds) / len(winds), 1) if winds else None,
+        )
+
+        if clouds:
+            entry.cloud_cover_percent = round(sum(clouds) / len(clouds))
+            up_fraction = _moon_up_fraction(loc.latitude, loc.longitude, win_start, win_end)
+            entry.moon_up_fraction = round(up_fraction, 3)
+            entry.conditions, entry.conditions_summary = summarize_conditions(
+                has_darkness=night.dark_start is not None,
+                cloud_cover_percent=entry.cloud_cover_percent,
+                moon_illumination=night.moon_illumination,
+                moon_up_fraction=up_fraction,
+            )
+            entry.focus, entry.focus_summary = observing_focus(
+                cloud_cover_percent=entry.cloud_cover_percent,
+                moon_illumination=night.moon_illumination,
+                moon_up_fraction=up_fraction,
+                has_darkness=night.dark_start is not None,
+            )
+
+            window = find_clear_window(night_rows, win_start, win_end)
+            if window:
+                entry.clear_from_local = window[0].astimezone(zone).strftime("%H:%M")
+                entry.clear_to_local = window[1].astimezone(zone).strftime("%H:%M")
+                entry.clear_hours = round(
+                    (window[1] - window[0]).total_seconds() / 3600, 1
+                )
+
+            if up_fraction > 0:
+                moonset = _moonset_after(loc.latitude, loc.longitude, win_start, win_end)
+                if moonset:
+                    entry.moonset_local = moonset.astimezone(zone).strftime("%H:%M")
+
+        # Name the few targets actually worth the trip, not everything up
+        sample = (
+            night.dark_start + timedelta(hours=1)
+            if night.dark_start
+            else datetime.combine(day, time(22, 0), tzinfo=zone).astimezone(timezone.utc)
+        )
+        rated = []
+        for t in compute_visible_targets(loc.latitude, loc.longitude, sample):
+            if not t.visible:
+                continue
+            level, _ = rate_target(
+                kind=t.kind,
+                altitude_deg=t.altitude_deg,
+                cloud_cover_percent=entry.cloud_cover_percent,
+                moon_illumination=night.moon_illumination,
+                moon_up_fraction=entry.moon_up_fraction or 0.0,
+            )
+            if level in ("good", "fair") or level is None:
+                rated.append((t.score, t.name))
+        entry.best_targets = [n for _, n in sorted(rated, reverse=True)[:3]]
+
+        out.append(entry)
+
+    rankable = [n for n in out if n.conditions is not None]
+    best = max(
+        rankable,
+        key=lambda n: night_rank_key(n.conditions, n.clear_hours, n.cloud_cover_percent),
+        default=None,
+    )
+    # Only call something "best" if it's actually worth going out for
+    best_date = best.date if best and best.conditions in ("good", "fair") else None
+
+    return OutlookResponse(timezone=tz_name, nights=out, best_date=best_date)
+
+
+@router.get("/tonight", response_model=TonightSummary)
+async def tonight_summary(
+    location_id: int,
+    date_local: str,
+    tz: Optional[str] = None,
+    db: DBSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """One payload for the dashboard: darkness, verdict, rated targets, clouds."""
+    loc = (
+        db.query(Location)
+        .filter(Location.id == location_id, Location.owner_id == current_user.id)
+        .first()
+    )
+    if not loc:
+        raise HTTPException(status_code=404, detail="Location not found")
+    if loc.latitude is None or loc.longitude is None:
+        raise HTTPException(
+            status_code=400,
+            detail="Location has no coordinates; set latitude/longitude first",
+        )
+
+    tz_name = tz or loc.timezone
+    if not tz_name:
+        raise HTTPException(status_code=400, detail="Timezone required")
+    try:
+        zone = ZoneInfo(tz_name)
+    except ZoneInfoNotFoundError:
+        raise HTTPException(status_code=400, detail="Invalid timezone")
+
+    night = compute_night_info(loc.latitude, loc.longitude, date_local, tz_name, zone)
+    rows = await add_conditions(night, loc.latitude, loc.longitude, zone)
+
+    # Show the sky an hour into full darkness (or mid-window if that's later
+    # than the middle), falling back to 10pm when the night never gets dark.
+    if night.dark_start:
+        start = night.dark_start
+        end = night.dark_end or start + timedelta(hours=2)
+        sample_utc = min(start + timedelta(hours=1), start + (end - start) / 2)
+    else:
+        sample_utc = datetime.fromisoformat(date_local).replace(
+            hour=22, minute=0, tzinfo=zone
+        ).astimezone(timezone.utc)
+
+    rated: List[RatedTarget] = []
+    for t in compute_visible_targets(loc.latitude, loc.longitude, sample_utc):
+        target = RatedTarget(**t.model_dump())
+        if t.visible:
+            target.suitability, target.suitability_reason = rate_target(
+                kind=t.kind,
+                altitude_deg=t.altitude_deg,
+                cloud_cover_percent=night.cloud_cover_percent,
+                moon_illumination=night.moon_illumination,
+                moon_up_fraction=night.moon_up_fraction or 0.0,
+            )
+        rated.append(target)
+
+    hourly = [
+        CloudPoint(
+            time_local=datetime.fromisoformat(r["time"])
+            .astimezone(zone)
+            .strftime("%H:%M"),
+            cloud_cover=round(r["cloud_cover"]),
+        )
+        for r in rows
+        if r.get("cloud_cover") is not None
+    ]
+
+    summary = TonightSummary(
+        night=night,
+        sample_time_local=sample_utc.astimezone(zone).strftime("%Y-%m-%dT%H:%M"),
+        targets=rated,
+        hourly_cloud=hourly,
+    )
+
+    win_start, win_end = _night_window(night, zone)
+    window = find_clear_window(rows, win_start, win_end)
+    if window:
+        summary.clear_from_local = window[0].astimezone(zone).strftime("%H:%M")
+        summary.clear_to_local = window[1].astimezone(zone).strftime("%H:%M")
+        summary.clear_hours = round((window[1] - window[0]).total_seconds() / 3600, 1)
+
+    summary.focus, _ = observing_focus(
+        cloud_cover_percent=night.cloud_cover_percent,
+        moon_illumination=night.moon_illumination,
+        moon_up_fraction=night.moon_up_fraction or 0.0,
+        has_darkness=night.dark_start is not None,
+    )
+    summary.cloud_trend = describe_cloud_trend(
+        [(p.time_local, p.cloud_cover) for p in hourly]
+    )
+
+    # If tonight is a write-off, say when to try instead — a recommendation
+    # without an alternative just tells the user to give up.
+    next_date, next_weekday = (None, None)
+    if night.conditions in ("poor", "fair"):
+        next_date, next_weekday = await _next_better_night(
+            loc.latitude, loc.longitude, date_local, tz_name, zone,
+            worse_than=night.conditions,
+        )
+
+    headline, detail = recommend_night(
+        conditions=night.conditions,
+        clear_hours=summary.clear_hours,
+        focus=summary.focus,
+        has_darkness=night.dark_start is not None,
+        next_better_weekday=next_weekday,
+        next_better_is_tomorrow=(
+            next_date is not None
+            and date.fromisoformat(next_date)
+            == date.fromisoformat(date_local) + timedelta(days=1)
+        ),
+    )
+    summary.recommendation = Recommendation(
+        headline=headline,
+        detail=detail,
+        next_better_date=next_date,
+        next_better_weekday=next_weekday,
+    )
+    return summary
+
+
+async def _next_better_night(
+    latitude: float,
+    longitude: float,
+    from_date: str,
+    tz_name: str,
+    zone: ZoneInfo,
+    worse_than: str,
+    lookahead: int = 6,
+) -> tuple[Optional[str], Optional[str]]:
+    """The soonest upcoming night with a better verdict than tonight's.
+
+    Deliberately cheap: one forecast request for the span, cloud averages
+    only — the caller just needs a date to point at, not a full outlook.
+    """
+    start_day = date.fromisoformat(from_date)
+    span_start = datetime.combine(
+        start_day + timedelta(days=1), time(12, 0), tzinfo=zone
+    ).astimezone(timezone.utc)
+    span_end = span_start + timedelta(days=lookahead + 1)
+
+    try:
+        rows = await get_hourly_forecast(latitude, longitude, span_start, span_end)
+    except Exception:  # noqa: BLE001 - no suggestion is better than a wrong one
+        return None, None
+    if not rows:
+        return None, None
+
+    want = {"poor": ("good", "fair"), "fair": ("good",)}[worse_than]
+
+    for offset in range(1, lookahead + 1):
+        day = start_day + timedelta(days=offset)
+        night = compute_night_info(latitude, longitude, day.isoformat(), tz_name, zone)
+        win_start, win_end = _night_window(night, zone)
+        clouds = [
+            r["cloud_cover"] for r in rows
+            if r.get("cloud_cover") is not None
+            and win_start <= datetime.fromisoformat(r["time"]) <= win_end
+        ]
+        if not clouds:
+            continue
+        verdict, _ = summarize_conditions(
+            has_darkness=night.dark_start is not None,
+            cloud_cover_percent=round(sum(clouds) / len(clouds)),
+            moon_illumination=night.moon_illumination,
+            moon_up_fraction=_moon_up_fraction(latitude, longitude, win_start, win_end),
+        )
+        if verdict in want:
+            return day.isoformat(), day.strftime("%A")
+    return None, None
 
 
 @router.get("/visible", response_model=List[VisibleTarget])
