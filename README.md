@@ -25,7 +25,17 @@ check the hourly forecast for your session, and log what you saw.
   the hourly cloud forecast are bundled into one JSON block the model is
   instructed to not stray from; the UI shows the answer and the data behind
   it. Feature-flagged on `ANTHROPIC_API_KEY`; the app runs normally without it
-- Saved observing locations with geocoding autofill (name → coordinates + timezone)
+- **Search-first locations**: add a site by name, not by coordinates. Results
+  are ranked toward wherever you're currently planning, and a query the
+  geocoder can't match verbatim ("Sydney Australia") falls back to fewer words
+  and says which query it actually answered. Each saved site shows its
+  forecast for the selected night and, when that night is a write-off, when
+  it's next usable
+- **Seven-night outlook** and an automatic best-site recommendation. Sites are
+  scored on sky alone — cloud, clear-window length, moonlight weighted by how
+  much of the dark window the Moon is up, and wind — so the ranking is the
+  same regardless of which site you're asking from; distance is applied
+  separately as a threshold a site must clear before it's worth driving to
 - Session planning in the location's local timezone (stored as UTC)
 - Hourly weather forecast for each planned session (Open-Meteo, humanized
   WMO conditions)
@@ -43,15 +53,76 @@ check the hourly forecast for your session, and log what you saw.
 
 ## Screenshots
 
-The Sky advisor turning a night's computed data into a plan. Every figure it
-quotes — cloud cover, the darkness window, moonset, each target's altitude and
-bearing — comes from the app's own calculations, not the model's memory:
+### Planner
+
+The night's verdict comes first, and you can question it without leaving the
+card. The title names the night you're looking at, so changing the date never
+leaves you reading yesterday's answer:
+
+![Tonight at a glance](docs/screenshots/tonight.png)
+
+The Sky advisor turning that same computed data into a plan. Every figure it
+quotes — cloud cover, the darkness window, moon phase, each target's altitude
+and bearing — comes from the app's own calculations, not the model's memory:
 
 ![Sky advisor](docs/screenshots/advisor.png)
 
-| Landing (demo deployment) | Tonight at a glance |
+…and it shows its work. "Show the data behind this" reveals the exact JSON
+block the model was given, so any claim in the answer can be checked against
+the numbers it came from:
+
+![The data behind the answer](docs/screenshots/advisor-data.png)
+
+The one-tap questions follow the forecast rather than sitting static — a
+bright-Moon night offers different questions than a clouded-out one:
+
+![Context-sensitive prompts](docs/screenshots/advisor-prompts.png)
+
+| Seven-night outlook | Best saved site tonight |
 |---|---|
-| ![Login](docs/screenshots/login.png) | ![Dashboard](docs/screenshots/dashboard.png) |
+| ![Outlook](docs/screenshots/outlook.png) | ![Best location](docs/screenshots/best-location.png) |
+
+The site recommendation is scored on sky quality alone — cloud, clear-window
+length, moonlight weighted by how much of the dark window the Moon is actually
+up, and wind — so the ranking doesn't change depending on where you're
+standing. Distance is applied separately, as a bar a site has to clear before
+it's worth driving to.
+
+### Sessions
+
+Grouped into what's still ahead and what already happened, filterable by
+status. A completed night carries its forecast and observation log side by
+side:
+
+![Session detail](docs/screenshots/session-details.png)
+
+| Session list | Observation log |
+|---|---|
+| ![Sessions](docs/screenshots/sessions.png) | ![Log form](docs/screenshots/observation-log.png) |
+
+Planning happens in a drawer over the list rather than on its own route —
+creating a session is an action, not a destination. Targets are filtered to
+what's actually above the horizon at the chosen time, with the reason given
+for anything that isn't:
+
+![Planning a session](docs/screenshots/new-session.png)
+
+### Locations
+
+Each saved site answers where it is, how it looks on the selected night, and
+when it's next usable — coordinates and timezone sit behind Edit, because
+nobody chooses an observing site by reading decimals:
+
+![Locations](docs/screenshots/locations.png)
+
+| Adding a site | Landing (demo deployment) |
+|---|---|
+| ![Search-first location entry](docs/screenshots/add-location.png) | ![Login](docs/screenshots/login.png) |
+
+Locations are added by searching, not by typing coordinates. Results are
+ranked toward wherever you're currently planning, and if the full query finds
+nothing the search falls back to fewer words and says so rather than silently
+answering a narrower question.
 
 ## Tech stack
 
