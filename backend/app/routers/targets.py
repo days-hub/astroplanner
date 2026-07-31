@@ -1,5 +1,6 @@
 import asyncio
 from datetime import date, datetime, time, timedelta, timezone
+from functools import lru_cache
 from typing import List, Literal, Optional
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -36,6 +37,32 @@ ts = load.timescale()
 eph = load("de421.bsp")  # good enough for Sun/Moon/planets
 earth = eph["earth"]
 sun = eph["sun"]
+
+# ---- Caching the pure astronomy ----
+#
+# Every function cached below is a deterministic function of position and
+# time: the same arguments give the same answer forever, so a second request
+# asking the same question is redoing arithmetic it already did. That is most
+# of the cost of the slow endpoints — the outlook runs seven nights of almanac
+# searches per load, and the Locations page fans the same work across every
+# saved site, none of it cached.
+#
+# Two rules keep this safe:
+#   * Only pure computation is cached. Anything touching the network or the
+#     database stays out, so a cached value can never be stale.
+#   * Anything returning a mutable object hands back a copy. add_conditions()
+#     writes its verdict onto the NightInfo it is given, so serving the same
+#     instance twice would leak one request's forecast into the next.
+#
+# Bounded so a user with many saved sites, or a long-running process walking
+# forward through dates, can't grow these without limit.
+_CACHE_SIZE = 1024
+
+
+def _coord_key(latitude: float, longitude: float) -> tuple[float, float]:
+    """Round to ~1 m so float noise can't miss an otherwise identical key."""
+    return round(latitude, 5), round(longitude, 5)
+
 
 PlanetName = Literal["Mercury", "Venus", "Mars", "Jupiter", "Saturn", "Uranus", "Neptune", "Moon"]
 
@@ -190,6 +217,15 @@ def _moon_up_fraction(latitude: float, longitude: float,
     night does. Sampled every 20 minutes, which is finer than the verdict
     thresholds need.
     """
+    return _moon_up_fraction_cached(
+        *_coord_key(latitude, longitude), start_utc, end_utc
+    )
+
+
+@lru_cache(maxsize=_CACHE_SIZE)
+def _moon_up_fraction_cached(latitude: float, longitude: float,
+                             start_utc: datetime, end_utc: datetime) -> float:
+    # Returns a float, so the cached value can be handed out directly.
     total = (end_utc - start_utc).total_seconds()
     if total <= 0:
         return 0.0
@@ -295,7 +331,29 @@ def compute_night_info(
     tz_name: str,
     zone: ZoneInfo,
 ) -> NightInfo:
-    """Darkness window + moon illumination for one night (local noon to noon)."""
+    """Darkness window + moon illumination for one night (local noon to noon).
+
+    Always returns a fresh instance: add_conditions() writes the forecast
+    verdict onto whatever NightInfo it is handed, so sharing the cached one
+    would let a request's cloud cover bleed into every later request for the
+    same night. `zone` is ignored for caching — it is derived from tz_name,
+    and deriving it inside means the two can't disagree.
+    """
+    return _night_info_cached(
+        *_coord_key(latitude, longitude), date_local, tz_name
+    ).model_copy()
+
+
+@lru_cache(maxsize=_CACHE_SIZE)
+def _night_info_cached(
+    latitude: float,
+    longitude: float,
+    date_local: str,
+    tz_name: str,
+) -> NightInfo:
+    # Every field is an immutable scalar, so a shallow copy at the call site
+    # is enough to protect this from mutation.
+    zone = ZoneInfo(tz_name)
     try:
         day = date.fromisoformat(date_local)
     except ValueError:
@@ -561,6 +619,15 @@ def _moonset_after(latitude: float, longitude: float,
     "Moon sets at 11:08 PM" is far more actionable than "Moon 87%", because
     it tells you when the deep-sky half of the night actually begins.
     """
+    return _moonset_after_cached(
+        *_coord_key(latitude, longitude), start_utc, end_utc
+    )
+
+
+@lru_cache(maxsize=_CACHE_SIZE)
+def _moonset_after_cached(latitude: float, longitude: float,
+                          start_utc: datetime, end_utc: datetime) -> Optional[datetime]:
+    # datetime is immutable, so the cached value can be handed out directly.
     observer = wgs84.latlon(latitude, longitude)
     topo = earth + observer
     moon = eph["moon"]
@@ -946,6 +1013,21 @@ def visible_targets(
 
 
 def compute_visible_targets(
+    latitude: float,
+    longitude: float,
+    when_utc: datetime,
+) -> List[VisibleTarget]:
+    """Positions and visibility for every known target at one instant.
+
+    Hands back a new list of new models each call — callers are free to sort
+    or filter the result, and none of that may reach the cached copy.
+    """
+    cached = _visible_targets_cached(*_coord_key(latitude, longitude), when_utc)
+    return [t.model_copy() for t in cached]
+
+
+@lru_cache(maxsize=_CACHE_SIZE)
+def _visible_targets_cached(
     latitude: float,
     longitude: float,
     when_utc: datetime,
