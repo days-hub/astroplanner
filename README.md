@@ -78,15 +78,24 @@ bright-Moon night offers different questions than a clouded-out one:
 
 ![Context-sensitive prompts](docs/screenshots/advisor-prompts.png)
 
-| Seven-night outlook | Best saved site tonight |
-|---|---|
-| ![Outlook](docs/screenshots/outlook.png) | ![Best location](docs/screenshots/best-location.png) |
+![Seven-night outlook](docs/screenshots/outlook.png)
 
-The site recommendation is scored on sky quality alone — cloud, clear-window
-length, moonlight weighted by how much of the dark window the Moon is actually
-up, and wind — so the ranking doesn't change depending on where you're
-standing. Distance is applied separately, as a bar a site has to clear before
-it's worth driving to.
+Nights are ranked by the same scorer used for sites, so the outlook and the
+location comparison can't disagree about what "better" means: cloud,
+clear-window length, moonlight weighted by how much of the dark window the
+Moon is actually up, and wind.
+
+That scoring deliberately knows nothing about where you're standing, so the
+ranking is identical whichever site you ask from. Distance enters separately,
+as a bar a site has to clear before it's worth driving to — which gives the
+recommendation two distinct things to say:
+
+| Your site is the best one | Somewhere is clearer, but not worth the drive |
+|---|---|
+| ![Best saved site](docs/screenshots/best-location.png) | ![Clearer site not worth the drive](docs/screenshots/best-location-tradeoff.png) |
+
+Both name their numbers. A recommendation you can't check is one you won't
+trust — especially when it's asking you to drive 200 km.
 
 ### Sessions
 
