@@ -71,7 +71,7 @@ const PROMPTS_DEFAULT = [
   "Should I drive somewhere darker?",
 ];
 
-export function presetPrompts(ctx?: AdvisorContext): string[] {
+function presetPrompts(ctx?: AdvisorContext): string[] {
   if (!ctx) return PROMPTS_DEFAULT;
   // Cloud first: it overrides everything else about the night.
   if (ctx.clearHours <= 0.5 || (ctx.cloudPercent ?? 0) >= 70) return PROMPTS_CLOUDED_OUT;
