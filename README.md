@@ -1,5 +1,7 @@
 # AstroPlanner
 
+[![CI](https://github.com/days-hub/astroplanner/actions/workflows/ci.yml/badge.svg)](https://github.com/days-hub/astroplanner/actions/workflows/ci.yml)
+
 **Live demo: [bortle.app](https://bortle.app)** — no signup required; click
 "Try the demo" for a seeded sandbox.
 
