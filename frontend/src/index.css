@@ -12,7 +12,11 @@
   line-height: 1.5;
   font-weight: 400;
 
-  color-scheme: light dark;
+  /* Dark only, and told to the browser: native widget chrome — the date
+     input's calendar popup, select dropdown lists, scrollbars — follows
+     this. With "light dark" Windows rendered them light, which is why the
+     two most-used controls looked pasted in from another app. */
+  color-scheme: dark;
   color: rgba(255, 255, 255, 0.87);
   background-color: #242424;
 
@@ -62,6 +66,20 @@ button:focus-visible {
   outline: 4px auto -webkit-focus-ring-color;
 }
 
+/* Native pickers can't be styled inline, so their chrome is tuned here.
+   The calendar glyph ships as a dark bitmap; inverting it makes it read as
+   one of ours instead of an OS leftover. */
+input[type="date"]::-webkit-calendar-picker-indicator,
+input[type="datetime-local"]::-webkit-calendar-picker-indicator {
+  filter: invert(0.75) sepia(0.08);
+  opacity: 0.85;
+  cursor: pointer;
+}
+input[type="date"]::-webkit-calendar-picker-indicator:hover,
+input[type="datetime-local"]::-webkit-calendar-picker-indicator:hover {
+  opacity: 1;
+}
+
 /* SpaceBackground photo layer: fade in, then a very slow drift/zoom */
 .space-bg-img {
   opacity: 0;
@@ -95,19 +113,6 @@ button:focus-visible {
   .space-bg-img {
     animation: none;
     opacity: 0.55;
-  }
-}
-
-@media (prefers-color-scheme: light) {
-  :root {
-    color: #213547;
-    background-color: #ffffff;
-  }
-  a:hover {
-    color: #747bff;
-  }
-  button {
-    background-color: #f9f9f9;
   }
 }
 

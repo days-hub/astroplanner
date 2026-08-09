@@ -2,6 +2,7 @@ import type { FormEvent } from "react";
 import { useEffect, useState } from "react";
 import SpaceBackground from "./SpaceBackground";
 import api, { apiErrorMessage, setAuthToken } from "./api";
+import { RocketIcon, TelescopeIcon } from "./icons";
 import { btnPrimary, btnSecondary } from "./theme";
 const loginPageStyle: React.CSSProperties = {
   minHeight: "100vh",
@@ -200,7 +201,7 @@ export default function LoginPage({ onLogin, onGoToRegister }: Props) {
             marginBottom: "0.75rem",
           }}
         >
-          <span>🔭</span>
+          <TelescopeIcon />
           <span>Observation Planner</span>
         </div>
 
@@ -224,7 +225,13 @@ export default function LoginPage({ onLogin, onGoToRegister }: Props) {
             style={demoButtonStyle}
             disabled={demoLoading}
           >
-            {demoLoading ? "Starting demo…" : "🚀 Try the demo"}
+            {demoLoading ? (
+              "Starting demo…"
+            ) : (
+              <>
+                <RocketIcon /> Try the demo
+              </>
+            )}
           </button>
           {demoError ? (
             <p

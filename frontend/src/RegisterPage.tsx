@@ -1,6 +1,7 @@
 import type { FormEvent } from "react";
 import { useState } from "react";
 import api, { apiErrorMessage, setAuthToken } from "./api";
+import { SparklesIcon } from "./icons";
 import { btnPrimary, btnSecondary } from "./theme";
 
 const registerPageStyle: React.CSSProperties = {
@@ -149,7 +150,7 @@ export default function RegisterPage({ onRegisteredAndLoggedIn, onGoToLogin }: P
               marginBottom: "0.75rem",
             }}
           >
-            <span>✨</span>
+            <SparklesIcon />
             <span>Create account</span>
           </div>
 

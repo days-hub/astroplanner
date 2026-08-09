@@ -12,6 +12,7 @@ import {
 } from "react-router-dom";
 import api from "./api";
 import TabNav from "./TabNav";
+import { TrashIcon } from "./icons";
 import Drawer from "./Drawer";
 import AddLocationDrawer, { type NewLocation } from "./AddLocationDrawer";
 import { SegmentedControl, StarRating } from "./controls";
@@ -23,6 +24,7 @@ import {
   btnSecondarySm,
   card as cardStyle,
   field as fieldStyle,
+  selectField as selectFieldStyle,
   headerRow as panelHeaderRow,
   metaLine as metaLineStyle,
   sectionTitle as sectionTitleStyle,
@@ -980,7 +982,7 @@ async function handleDeleteSession(id: number) {
                 onChange={(e) => setNewTarget(e.target.value)}
                 disabled={!hasTime}
                 style={{
-                  ...fieldStyle,
+                  ...selectFieldStyle,
                   marginTop: "0.2rem",
                   opacity: !hasTime ? 0.6 : 1,
                   cursor: !hasTime ? "not-allowed" : "pointer",
@@ -1137,7 +1139,7 @@ async function handleDeleteSession(id: number) {
                 <select
                   value={editTarget}
                   onChange={(e) => setEditTarget(e.target.value)}
-                  style={{ ...fieldStyle, marginTop: "0.2rem" }}
+                  style={{ ...selectFieldStyle, marginTop: "0.2rem" }}
                 >
                   {editVisibleTargets
                     .filter((t) => t.visible)
@@ -1160,7 +1162,7 @@ async function handleDeleteSession(id: number) {
                 <select
                   value={editStatus}
                   onChange={(e) => setEditStatus(e.target.value)}
-                  style={{ ...fieldStyle, marginTop: "0.2rem" }}
+                  style={{ ...selectFieldStyle, marginTop: "0.2rem" }}
                 >
                   {SESSION_STATUSES.map((st) => (
                     <option key={st} value={st}>
@@ -1279,7 +1281,7 @@ async function handleDeleteSession(id: number) {
                   transition: "opacity 140ms ease",
                 }}
               >
-                🗑️
+                <TrashIcon size={15} />
               </button>
             </div>
           </>
@@ -1452,8 +1454,8 @@ async function handleDeleteSession(id: number) {
         {/* Weather */}
         <div
           style={{
-            flex: "1.2 1 360px", // ✅ grows a bit more than logs
-            minWidth: 360,       // ✅ makes it visibly wider
+            flex: "1.2 1 360px", // grows a bit more than logs
+            minWidth: 360,       // makes it visibly wider
             padding: "0.85rem 1rem",
             borderRadius: 12,
             border: "1px solid rgba(148,163,184,0.35)",

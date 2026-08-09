@@ -9,6 +9,7 @@
 import { useEffect, useRef, useState } from "react";
 import api, { apiErrorMessage } from "./api";
 import Drawer from "./Drawer";
+import { MapPinIcon } from "./icons";
 import { btnPrimary, btnSecondarySm, field, fontSize, text } from "./theme";
 
 type PlaceMatch = {
@@ -190,7 +191,7 @@ export default function AddLocationDrawer({
                 onClick={() => choose(m)}
                 style={resultRowStyle}
               >
-                <div style={{ fontWeight: 600, fontSize: fontSize.body }}>📍 {m.name}</div>
+                <div style={{ fontWeight: 600, fontSize: fontSize.body }}><MapPinIcon style={{ marginRight: "0.35rem", color: "#8fa0b5" }} />{m.name}</div>
                 {m.region && (
                   <div style={{ fontSize: fontSize.small, color: text.secondary }}>
                     {m.region}

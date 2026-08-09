@@ -4,7 +4,7 @@
 // Tonight, the Sky advisor, and the session form all read from this, so the
 // controls live here once instead of being repeated in each card.
 import type React from "react";
-import { field, fontSize, text } from "./theme";
+import { field, fontSize, selectField, text } from "./theme";
 
 interface LocationOption {
   id: number;
@@ -82,7 +82,7 @@ export default function ContextBar({
           onChange={(e) => e.target.value && onSelectLocation(Number(e.target.value))}
           aria-label="Observing location"
           style={{
-            ...field,
+            ...selectField,
             width: "auto",
             fontWeight: 700,
             fontSize: "1rem",

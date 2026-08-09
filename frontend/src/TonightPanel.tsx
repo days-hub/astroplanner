@@ -10,6 +10,14 @@ import api from "./api";
 import AdvisorPanel from "./AdvisorPanel";
 import CloudTimeline, { type CloudPoint } from "./CloudTimeline";
 import {
+  MoonIcon,
+  PlanetIcon,
+  SparklesIcon,
+  StarIcon,
+  SunriseIcon,
+  SunsetIcon,
+} from "./icons";
+import {
   btnPrimarySm,
   btnSecondarySm,
   cardFeature,
@@ -76,11 +84,11 @@ interface Props {
   onPickDate?: (date: string) => void;
 }
 
-const KIND_ICONS: Record<RatedTarget["kind"], string> = {
-  planet: "🪐",
-  moon: "🌙",
-  dso: "✨",
-  star: "⭐",
+const KIND_ICONS: Record<RatedTarget["kind"], React.ReactNode> = {
+  planet: <PlanetIcon />,
+  moon: <MoonIcon frac={0.35} />,
+  dso: <SparklesIcon />,
+  star: <StarIcon />,
 };
 
 // Wording is deliberately blunt: a target being above the horizon is not a
@@ -155,14 +163,6 @@ function nightLabel(dateStr: string, tz: string): string {
 function degToCompass(deg: number) {
   const dirs = ["N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE", "S", "SSW", "SW", "WSW", "W", "WNW", "NW", "NNW"];
   return dirs[Math.round(((deg % 360) / 22.5)) % 16];
-}
-
-function moonEmoji(frac: number) {
-  if (frac < 0.05) return "🌑";
-  if (frac < 0.35) return "🌒";
-  if (frac < 0.65) return "🌓";
-  if (frac < 0.95) return "🌔";
-  return "🌕";
 }
 
 const targetCardStyle: React.CSSProperties = {
@@ -382,10 +382,14 @@ export default function TonightPanel({
                 marginTop: "0.8rem",
               }}
             >
-              <span style={chip}>🌇 Sunset {fmtTime(night.sunset, tz)}</span>
-              <span style={chip}>🌅 Sunrise {fmtTime(night.sunrise, tz)}</span>
               <span style={chip}>
-                {moonEmoji(night.moon_illumination)} Moon{" "}
+                <SunsetIcon /> Sunset {fmtTime(night.sunset, tz)}
+              </span>
+              <span style={chip}>
+                <SunriseIcon /> Sunrise {fmtTime(night.sunrise, tz)}
+              </span>
+              <span style={chip}>
+                <MoonIcon frac={night.moon_illumination} /> Moon{" "}
                 {Math.round(night.moon_illumination * 100)}%
               </span>
             </div>
@@ -457,7 +461,9 @@ export default function TonightPanel({
                 return (
                   <div key={t.name} style={targetCardStyle}>
                     <div style={{ display: "flex", alignItems: "flex-start", gap: "0.4rem" }}>
-                      <span aria-hidden>{KIND_ICONS[t.kind]}</span>
+                      <span aria-hidden style={{ color: text.secondary, marginTop: "0.1rem" }}>
+                        {KIND_ICONS[t.kind]}
+                      </span>
                       <strong style={{ fontSize: fontSize.body, lineHeight: 1.3 }}>
                         {t.name}
                       </strong>

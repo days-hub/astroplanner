@@ -73,7 +73,31 @@ export const field: React.CSSProperties = {
   fontSize: fontSize.body,
 };
 
+// The dropdown arrow, drawn ourselves. `appearance: none` strips the OS
+// widget chrome (the part that made selects look pasted in from another
+// app), but it also strips the arrow — and an arrowless select reads as a
+// text input that ignores typing.
+const selectChevron =
+  "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%238fa0b5' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E\")";
+
+export const selectField: React.CSSProperties = {
+  ...field,
+  WebkitAppearance: "none",
+  MozAppearance: "none",
+  appearance: "none",
+  backgroundImage: selectChevron,
+  backgroundRepeat: "no-repeat",
+  backgroundPosition: "right 0.6rem center",
+  backgroundSize: "1em",
+  paddingRight: "2.1rem", // room for the chevron
+  cursor: "pointer",
+};
+
 export const chip: React.CSSProperties = {
+  // inline-flex so an SVG icon and its label share a centreline
+  display: "inline-flex",
+  alignItems: "center",
+  gap: "0.35rem",
   borderRadius: 9999,
   border: "1px solid rgba(148,163,184,0.28)",
   background: "rgba(2,6,23,0.35)",

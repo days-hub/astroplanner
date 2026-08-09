@@ -7,6 +7,7 @@
 import type React from "react";
 import { useEffect, useState } from "react";
 import api from "./api";
+import { ChevronRightIcon } from "./icons";
 import {
   btnDangerIcon,
   btnPrimarySm,
@@ -318,7 +319,7 @@ export default function LocationsPage({
                       transition: "transform 140ms ease",
                     }}
                   >
-                    ▶
+                    <ChevronRightIcon size={14} />
                   </span>
                   <strong style={{ fontSize: fontSize.body }}>{loc.name}</strong>
                   {isCurrent && (

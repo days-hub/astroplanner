@@ -7,6 +7,7 @@
 import type React from "react";
 import { useEffect, useState } from "react";
 import api, { apiErrorMessage } from "./api";
+import { TelescopeIcon } from "./icons";
 import { btnPrimary, btnSecondarySm, card, field, fontSize, text } from "./theme";
 
 type AdvisorStatus = { enabled: boolean; model: string | null };
@@ -188,7 +189,7 @@ export default function AdvisorPanel({
       {!compact && (
         <div style={{ marginBottom: "0.7rem" }}>
           <h3 style={{ fontSize: fontSize.section, fontWeight: 600, margin: 0 }}>
-            🔭 Sky advisor
+            <TelescopeIcon style={{ marginRight: "0.4rem" }} />Sky advisor
           </h3>
           <div
             style={{
