@@ -10,7 +10,7 @@ import { useEffect, useRef, useState } from "react";
 import api, { apiErrorMessage } from "./api";
 import Drawer from "./Drawer";
 import { MapPinIcon } from "./icons";
-import { btnPrimary, btnSecondarySm, field, fontSize, text } from "./theme";
+import { btnPrimary, btnSecondarySm, field, fontSize, line, surface, text } from "./theme";
 
 type PlaceMatch = {
   name: string;
@@ -46,8 +46,8 @@ const resultRowStyle: React.CSSProperties = {
   display: "block",
   width: "100%",
   textAlign: "left",
-  background: "rgba(2,6,23,0.35)",
-  border: "1px solid rgba(148,163,184,0.2)",
+  background: surface.inset,
+  border: "1px solid transparent",
   borderRadius: 12,
   padding: "0.55rem 0.7rem",
   cursor: "pointer",
@@ -208,8 +208,8 @@ export default function AddLocationDrawer({
           <div
             style={{
               borderRadius: 12,
-              border: "1px solid rgba(148,163,184,0.25)",
-              background: "rgba(2,6,23,0.35)",
+              border: line.hairline,
+              background: surface.inset,
               padding: "0.7rem 0.8rem",
             }}
           >

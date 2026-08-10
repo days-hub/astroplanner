@@ -6,7 +6,7 @@
 // feel lightweight rather than like leaving the page.
 import type React from "react";
 import { useEffect } from "react";
-import { btnSecondarySm, fontSize, text } from "./theme";
+import { btnSecondarySm, fontSize, line, text } from "./theme";
 
 interface Props {
   open: boolean;
@@ -28,8 +28,8 @@ const panelStyle: React.CSSProperties = {
   right: 0,
   bottom: 0,
   width: "min(30rem, 100vw)",
-  background: "rgba(15,23,42,0.98)",
-  borderLeft: "1px solid rgba(148,163,184,0.35)",
+  background: "rgba(17,25,44,0.98)",
+  borderLeft: line.edge,
   boxShadow: "-24px 0 60px rgba(0,0,0,0.55)",
   zIndex: 41,
   display: "flex",

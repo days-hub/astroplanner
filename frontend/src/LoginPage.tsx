@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import SpaceBackground from "./SpaceBackground";
 import api, { apiErrorMessage, setAuthToken } from "./api";
 import { RocketIcon, TelescopeIcon } from "./icons";
-import { btnPrimary, btnSecondary } from "./theme";
+import { btnPrimary, btnSecondary, line } from "./theme";
 const loginPageStyle: React.CSSProperties = {
   minHeight: "100vh",
   display: "flex",
@@ -22,7 +22,7 @@ const loginCardStyle: React.CSSProperties = {
   borderRadius: 16,
   background: "rgba(15, 23, 42, 0.9)",
   boxShadow: "0 20px 40px rgba(0,0,0,0.6)",
-  border: "1px solid rgba(148, 163, 184, 0.3)",
+  border: line.edge,
 };
 
 const titleStyle: React.CSSProperties = {
@@ -66,13 +66,15 @@ const buttonStyle: React.CSSProperties = {
 
 // The demo is the headline call-to-action on the public deployment, so it
 // gets its own emerald treatment rather than reusing the login gradient.
+// Inherits btnPrimary's gradient deliberately: the login page used to brand
+// the product green and then the app never showed green again except as a
+// "good conditions" verdict. One accent means the first button you press
+// looks like every primary button after it.
 const demoButtonStyle: React.CSSProperties = {
   ...btnPrimary,
   width: "100%",
   padding: "0.75rem",
   fontSize: "0.95rem",
-  background: "linear-gradient(135deg,#10b981,#0d9488)",
-  boxShadow: "0 8px 20px rgba(16,185,129,0.25)",
 };
 // A text link, not a button: signing in is the secondary path on a demo
 // deployment and shouldn't compete with the demo call to action.

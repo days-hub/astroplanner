@@ -9,20 +9,19 @@ import { useEffect, useState } from "react";
 import api from "./api";
 import AdvisorPanel from "./AdvisorPanel";
 import CloudTimeline, { type CloudPoint } from "./CloudTimeline";
+import NightTrack from "./NightTrack";
 import {
   MoonIcon,
   PlanetIcon,
   SparklesIcon,
   StarIcon,
-  SunriseIcon,
-  SunsetIcon,
 } from "./icons";
 import {
   btnPrimarySm,
-  btnSecondarySm,
   cardFeature,
-  chip,
   fontSize,
+  inset,
+  line,
   text,
   verdictStyles,
 } from "./theme";
@@ -69,6 +68,7 @@ type TonightSummary = {
   clear_from_local?: string | null;
   clear_to_local?: string | null;
   clear_hours: number;
+  moonset_local?: string | null;
   focus?: string | null;
   cloud_trend?: string | null;
   recommendation?: Recommendation | null;
@@ -165,10 +165,10 @@ function degToCompass(deg: number) {
   return dirs[Math.round(((deg % 360) / 22.5)) % 16];
 }
 
+// Recessed, not outlined. These sit on the feature card, so the tint plus
+// the gap between them is enough containment.
 const targetCardStyle: React.CSSProperties = {
-  borderRadius: 12,
-  border: "1px solid rgba(148,163,184,0.25)",
-  background: "rgba(2,6,23,0.4)",
+  ...inset,
   padding: "0.7rem 0.8rem",
   display: "grid",
   gap: "0.3rem",
@@ -236,10 +236,13 @@ export default function TonightPanel({
     <section style={cardFeature}>
       <h2
         style={{
-          fontSize: fontSize.title,
-          fontWeight: 700,
+          // An identifier, not a headline: it says which night you're looking
+          // at, and then gets out of the way of the verdict below it.
+          fontSize: fontSize.section,
+          fontWeight: 600,
+          color: text.secondary,
           margin: 0,
-          letterSpacing: "-0.01em",
+          letterSpacing: "0.01em",
         }}
       >
         {nightLabel(dateStr, tz)} at {locationName ?? "your location"}
@@ -248,32 +251,49 @@ export default function TonightPanel({
       {/* The bottom line, before any of the supporting detail. Everything
           below is evidence; this is the conclusion. */}
       {data?.recommendation && (
-        <div
-          style={{
-            marginTop: "0.75rem",
-            padding: "0.8rem 1rem",
-            borderRadius: 14,
-            background: verdict
-              ? verdict.background
-              : "rgba(148,163,184,0.08)",
-            border: verdict ? verdict.border : "1px solid rgba(148,163,184,0.25)",
-          }}
-        >
+        // No tinted container. A ~150px reddish block made "conditions are
+        // bad" the loudest thing on the page — louder than the night you're
+        // looking at, and louder than the alternative you actually want the
+        // reader to move toward. The coloured headline says it in one line.
+        // Good news keeps its tint (see the outlook's best-night callout):
+        // bad news should be quiet and brief, good alternatives promoted.
+        <div style={{ marginTop: "0.9rem" }}>
           <div
             style={{
-              fontSize: "1.1rem",
+              display: "flex",
+              alignItems: "center",
+              gap: "0.6rem",
+              fontSize: fontSize.lead,
               fontWeight: 700,
               color: verdict ? verdict.color : text.primary,
               letterSpacing: "-0.01em",
+              lineHeight: 1.25,
             }}
           >
+            {verdict && (
+              <span
+                aria-hidden
+                style={{
+                  width: 9,
+                  height: 9,
+                  borderRadius: 9999,
+                  background: "currentColor",
+                  flexShrink: 0,
+                }}
+              />
+            )}
             {data.recommendation.headline}
           </div>
           <div
             style={{
               fontSize: fontSize.body,
-              color: text.primary,
-              marginTop: "0.25rem",
+              color: text.secondary,
+              marginTop: "0.3rem",
+              paddingLeft: verdict ? "1.45rem" : 0,
+              // No narrow measure here: the page is already capped at 1100px,
+              // and clamping further wrapped one short sentence mid-clause
+              // into a column with half the card empty beside it.
+              maxWidth: "90ch",
             }}
           >
             {data.recommendation.detail}
@@ -282,7 +302,15 @@ export default function TonightPanel({
             <button
               type="button"
               onClick={() => onPickDate(data.recommendation!.next_better_date!)}
-              style={{ ...btnSecondarySm, marginTop: "0.6rem" }}
+              // The primary action on the whole screen. Having just concluded
+              // "not worth setting up", the useful next move is planning the
+              // night that is — so this gets the filled treatment while the
+              // per-target buttons below stay secondary to it.
+              style={{
+                ...btnPrimarySm,
+                marginTop: "0.7rem",
+                marginLeft: verdict ? "1.45rem" : 0,
+              }}
             >
               Plan {data.recommendation.next_better_weekday} instead
             </button>
@@ -315,28 +343,14 @@ export default function TonightPanel({
           gridTemplateColumns: "minmax(0, 1.15fr) minmax(0, 1fr)",
           gap: "1.5rem",
           alignItems: "start",
-          marginTop: "0.7rem",
+          // The conclusion above is separated from the evidence below by a
+          // rule and space, now that a tinted box no longer does that job.
+          marginTop: "1.15rem",
+          paddingTop: "1.15rem",
+          borderTop: line.hairline,
         }}
       >
         <div>
-          {verdict && (
-            <div
-              style={{
-                display: "inline-flex",
-                alignItems: "center",
-                padding: "0.3rem 0.75rem",
-                borderRadius: 9999,
-                background: verdict.background,
-                border: verdict.border,
-                color: verdict.color,
-                fontSize: fontSize.body,
-                fontWeight: 700,
-              }}
-            >
-              {verdict.label}
-            </div>
-          )}
-
           {night?.conditions_summary && (
             <div
               style={{
@@ -361,7 +375,7 @@ export default function TonightPanel({
               </div>
               <div
                 style={{
-                  fontSize: "1.5rem",
+                  fontSize: fontSize.title,
                   fontWeight: 700,
                   color: night.dark_start ? text.primary : text.secondary,
                   letterSpacing: "-0.01em",
@@ -373,26 +387,25 @@ export default function TonightPanel({
             </div>
           )}
 
+          {/* The window stated above, drawn: twilight shading into full
+              darkness, the clear gap on the same axis, moonset at its real
+              time. It sits under the window text because that's the sentence
+              it illustrates — and it replaces the three separate Sunset /
+              Sunrise / Moon chips that made the reader assemble this
+              picture themselves. */}
           {night && (
-            <div
-              style={{
-                display: "flex",
-                gap: "0.45rem",
-                flexWrap: "wrap",
-                marginTop: "0.8rem",
-              }}
-            >
-              <span style={chip}>
-                <SunsetIcon /> Sunset {fmtTime(night.sunset, tz)}
-              </span>
-              <span style={chip}>
-                <SunriseIcon /> Sunrise {fmtTime(night.sunrise, tz)}
-              </span>
-              <span style={chip}>
-                <MoonIcon frac={night.moon_illumination} /> Moon{" "}
-                {Math.round(night.moon_illumination * 100)}%
-              </span>
-            </div>
+            <NightTrack
+              sunset={night.sunset}
+              darkStart={night.dark_start}
+              darkEnd={night.dark_end}
+              sunrise={night.sunrise}
+              clearFrom={data?.clear_from_local}
+              clearTo={data?.clear_to_local}
+              moonsetLocal={data?.moonset_local}
+              moonIllumination={night.moon_illumination}
+              moonUpFraction={night.moon_up_fraction}
+              tz={tz}
+            />
           )}
         </div>
 
@@ -401,6 +414,8 @@ export default function TonightPanel({
             points={data.hourly_cloud}
             meanPercent={night?.cloud_cover_percent ?? null}
             trend={data.cloud_trend}
+            clearFrom={data.clear_from_local}
+            clearTo={data.clear_to_local}
           />
         )}
       </div>
@@ -450,7 +465,7 @@ export default function TonightPanel({
             <div
               style={{
                 display: "grid",
-                gridTemplateColumns: "repeat(auto-fill, minmax(185px, 1fr))",
+                gridTemplateColumns: "repeat(auto-fit, minmax(185px, 1fr))",
                 gap: "0.55rem",
               }}
             >
@@ -461,7 +476,9 @@ export default function TonightPanel({
                 return (
                   <div key={t.name} style={targetCardStyle}>
                     <div style={{ display: "flex", alignItems: "flex-start", gap: "0.4rem" }}>
-                      <span aria-hidden style={{ color: text.secondary, marginTop: "0.1rem" }}>
+                      {/* No colour override: each glyph carries its own hue,
+                          which is the whole point of the duotone set. */}
+                      <span aria-hidden style={{ marginTop: "0.1rem" }}>
                         {KIND_ICONS[t.kind]}
                       </span>
                       <strong style={{ fontSize: fontSize.body, lineHeight: 1.3 }}>

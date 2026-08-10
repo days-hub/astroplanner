@@ -6,7 +6,7 @@
 // a night moves the whole page's context onto it.
 import { useEffect, useState } from "react";
 import api from "./api";
-import { card, fontSize, text, verdictStyles } from "./theme";
+import { card, fontSize, line, pillShape, surface, text, verdictStyles } from "./theme";
 
 type Verdict = "good" | "fair" | "poor";
 
@@ -138,7 +138,6 @@ export default function OutlookPanel({
             padding: "0.85rem 1rem",
             borderRadius: 14,
             background: verdictStyles[best.conditions ?? "fair"].background,
-            border: verdictStyles[best.conditions ?? "fair"].border,
           }}
         >
           <div
@@ -197,7 +196,10 @@ export default function OutlookPanel({
                 aria-current={isSelected ? "true" : undefined}
                 style={{
                   display: "grid",
-                  gridTemplateColumns: "minmax(0, 7rem) minmax(0, 8rem) minmax(0, 1fr)",
+                  // Fixed columns so the eye can scan one column down the
+                  // week; the cloud figure is right-aligned tabular so 4%
+                  // and 100% end at the same edge instead of wobbling.
+                  gridTemplateColumns: "minmax(0, 7.5rem) 6.2rem minmax(0, 1fr)",
                   alignItems: "center",
                   gap: "0.75rem",
                   textAlign: "left",
@@ -205,12 +207,14 @@ export default function OutlookPanel({
                   borderRadius: 12,
                   cursor: "pointer",
                   color: text.primary,
-                  border: isSelected
-                    ? "1px solid rgba(147,197,253,0.55)"
-                    : "1px solid rgba(148,163,184,0.18)",
+                  // Borderless by default: the recessed tint and the gap
+                  // contain the row. An outline here means "selected", and
+                  // only that — the transparent border keeps the geometry
+                  // identical so rows don't shift by a pixel on selection.
+                  border: isSelected ? line.focus : "1px solid transparent",
                   background: isSelected
                     ? "rgba(59,130,246,0.14)"
-                    : "rgba(2,6,23,0.3)",
+                    : surface.inset,
                 }}
               >
                 <span style={{ fontSize: fontSize.body, fontWeight: 600 }}>
@@ -219,6 +223,7 @@ export default function OutlookPanel({
                     <span
                       style={{
                         marginLeft: "0.35rem",
+                        ...pillShape,
                         fontSize: "0.62rem",
                         fontWeight: 700,
                         letterSpacing: "0.06em",
@@ -236,6 +241,8 @@ export default function OutlookPanel({
                     fontSize: fontSize.small,
                     fontWeight: 700,
                     color: v ? v.color : text.muted,
+                    textAlign: "right",
+                    fontVariantNumeric: "tabular-nums",
                   }}
                 >
                   {n.cloud_cover_percent != null
@@ -243,7 +250,14 @@ export default function OutlookPanel({
                     : "no forecast"}
                 </span>
 
-                <span style={{ fontSize: fontSize.small, color: text.secondary, minWidth: 0 }}>
+                <span
+                  style={{
+                    fontSize: fontSize.small,
+                    color: text.secondary,
+                    minWidth: 0,
+                    fontVariantNumeric: "tabular-nums",
+                  }}
+                >
                   {n.clear_from_local
                     ? `Clear ${to12h(n.clear_from_local)} – ${to12h(n.clear_to_local)}`
                     : "No clear window"}

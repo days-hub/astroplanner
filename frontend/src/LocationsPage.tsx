@@ -15,6 +15,9 @@ import {
   card,
   field,
   fontSize,
+  line,
+  pillShape,
+  surface,
   text,
   verdictStyles,
 } from "./theme";
@@ -124,28 +127,32 @@ function sortLocations(
 // this property", so `{...btnSecondarySm, borderColor: undefined}` wiped the
 // border colour the shorthand had just set — which is why the unselected
 // options rendered as dim, borderless text.
+// Compact filters keep the capsule: they're a segmented choice, not an
+// action, and the shape is what distinguishes them from the buttons below.
 const sortButtonOff: React.CSSProperties = {
   ...btnSecondarySm,
-  border: "1px solid rgba(148,163,184,0.45)",
-  color: text.primary,
-  background: "transparent",
+  ...pillShape,
+  border: "1px solid transparent",
+  color: text.secondary,
+  background: surface.inset,
 };
 
 const sortButtonOn: React.CSSProperties = {
   ...btnSecondarySm,
-  border: "1px solid rgba(147,197,253,0.7)",
+  ...pillShape,
+  border: line.focus,
   color: "#dbeafe",
   background: "rgba(59,130,246,0.22)",
   fontWeight: 600,
 };
 
+// Outline reserved for the site you're planning from; everything else is
+// contained by tint and spacing alone.
 const rowStyle = (current: boolean): React.CSSProperties => ({
   borderRadius: 14,
-  border: current
-    ? "1px solid rgba(147,197,253,0.5)"
-    : "1px solid rgba(148,163,184,0.2)",
-  background: current ? "rgba(59,130,246,0.1)" : "rgba(2,6,23,0.3)",
-  padding: "0.85rem 1rem",
+  border: current ? line.focus : "1px solid transparent",
+  background: current ? "rgba(59,130,246,0.1)" : surface.inset,
+  padding: "0.6rem 0.9rem",
 });
 
 export default function LocationsPage({
@@ -306,82 +313,100 @@ export default function LocationsPage({
                   font: "inherit",
                 }}
               >
-                <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", flexWrap: "wrap" }}>
-                  {/* A visible affordance: without it the card reads as a
-                      static row and nobody discovers the actions. */}
-                  <span
-                    aria-hidden
-                    style={{
-                      color: text.muted,
-                      fontSize: "0.7rem",
-                      display: "inline-block",
-                      transform: expanded ? "rotate(90deg)" : "none",
-                      transition: "transform 140ms ease",
-                    }}
-                  >
-                    <ChevronRightIcon size={14} />
-                  </span>
-                  <strong style={{ fontSize: fontSize.body }}>{loc.name}</strong>
-                  {isCurrent && (
+                {/* Two rows, identity left and forecast right: comparing
+                    sites becomes one vertical scan down the right edge, and
+                    the card is half the height it was as five stacked lines. */}
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "minmax(0, 1fr) auto",
+                    columnGap: "1rem",
+                    rowGap: "0.15rem",
+                    alignItems: "baseline",
+                  }}
+                >
+                  <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", flexWrap: "wrap" }}>
+                    {/* A visible affordance: without it the card reads as a
+                        static row and nobody discovers the actions. */}
                     <span
+                      aria-hidden
                       style={{
-                        fontSize: "0.66rem",
-                        fontWeight: 700,
-                        letterSpacing: "0.06em",
-                        textTransform: "uppercase",
-                        color: "#93c5fd",
-                        border: "1px solid rgba(147,197,253,0.45)",
-                        borderRadius: 9999,
-                        padding: "0.05rem 0.4rem",
+                        color: text.muted,
+                        display: "inline-flex",
+                        transform: expanded ? "rotate(90deg)" : "none",
+                        transition: "transform 140ms ease",
                       }}
                     >
-                      Current
+                      <ChevronRightIcon size={14} />
                     </span>
-                  )}
-                </div>
-
-                {loc.region && (
-                  <div style={{ fontSize: fontSize.small, color: text.secondary, marginTop: "0.1rem" }}>
-                    {loc.region}
-                  </div>
-                )}
-
-                <div style={{ fontSize: fontSize.small, color: text.muted, marginTop: "0.15rem" }}>
-                  {counts.planned} planned · {counts.completed} completed
-                </div>
-
-                {/* Tonight's outlook, and if it's a washout, when it's next on */}
-                <div style={{ marginTop: "0.5rem", fontSize: fontSize.body }}>
-                  {f ? (
-                    <>
-                      <span style={{ color: v ? v.color : text.muted, fontWeight: 700 }}>
-                        {f.conditions ? VERDICT_WORD[f.conditions] : "No forecast"}
+                    <strong style={{ fontSize: fontSize.body }}>{loc.name}</strong>
+                    {isCurrent && (
+                      <span
+                        style={{
+                          fontSize: "0.66rem",
+                          fontWeight: 700,
+                          letterSpacing: "0.06em",
+                          textTransform: "uppercase",
+                          color: "#93c5fd",
+                          background: "rgba(147,197,253,0.14)",
+                          ...pillShape,
+                          padding: "0.1rem 0.45rem",
+                        }}
+                      >
+                        Current
                       </span>
-                      {f.cloud_cover_percent != null && (
-                        <span style={{ color: text.secondary }}>
-                          {` · ${f.cloud_cover_percent}% cloud`}
-                        </span>
-                      )}
-                      {f.clear_from_local && (
-                        <span style={{ color: text.secondary }}>
-                          {` · clear ${to12h(f.clear_from_local)} – ${to12h(f.clear_to_local)}`}
-                        </span>
-                      )}
-                    </>
-                  ) : (
-                    <span style={{ color: text.muted }}>Checking forecast…</span>
-                  )}
-                </div>
-
-                {f && !f.clear_from_local && (
-                  <div style={{ fontSize: fontSize.small, color: text.secondary, marginTop: "0.2rem" }}>
-                    {f.next_clear_weekday
-                      ? `Next clear window: ${f.next_clear_weekday}, ${to12h(
-                          f.next_clear_from_local,
-                        )} – ${to12h(f.next_clear_to_local)}`
-                      : "No clear window in the next week"}
+                    )}
                   </div>
-                )}
+
+                  <div
+                    style={{
+                      fontSize: fontSize.body,
+                      textAlign: "right",
+                      fontVariantNumeric: "tabular-nums",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    {f ? (
+                      <>
+                        <span style={{ color: v ? v.color : text.muted, fontWeight: 700 }}>
+                          {f.conditions ? VERDICT_WORD[f.conditions] : "No forecast"}
+                        </span>
+                        {f.cloud_cover_percent != null && (
+                          <span style={{ color: text.secondary }}>
+                            {` · ${f.cloud_cover_percent}% cloud`}
+                          </span>
+                        )}
+                      </>
+                    ) : (
+                      <span style={{ color: text.muted }}>Checking…</span>
+                    )}
+                  </div>
+
+                  <div style={{ fontSize: fontSize.small, color: text.secondary, minWidth: 0 }}>
+                    {[loc.region, `${counts.planned} planned · ${counts.completed} completed`]
+                      .filter(Boolean)
+                      .join(" · ")}
+                  </div>
+
+                  {/* Tonight's window, or if it's a washout, when it's next on */}
+                  <div
+                    style={{
+                      fontSize: fontSize.small,
+                      color: text.secondary,
+                      textAlign: "right",
+                      fontVariantNumeric: "tabular-nums",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    {f?.clear_from_local
+                      ? `clear ${to12h(f.clear_from_local)} – ${to12h(f.clear_to_local)}`
+                      : f
+                        ? f.next_clear_weekday
+                          ? `next: ${f.next_clear_weekday} ${to12h(f.next_clear_from_local)}`
+                          : "no clear night this week"
+                        : ""}
+                  </div>
+                </div>
               </button>
 
               {expanded && (

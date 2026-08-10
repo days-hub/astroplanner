@@ -2,7 +2,7 @@ import type { FormEvent } from "react";
 import { useState } from "react";
 import api, { apiErrorMessage, setAuthToken } from "./api";
 import { SparklesIcon } from "./icons";
-import { btnPrimary, btnSecondary } from "./theme";
+import { btnPrimary, btnSecondary, line } from "./theme";
 
 const registerPageStyle: React.CSSProperties = {
   minHeight: "100vh",
@@ -24,7 +24,7 @@ const registerCardStyle: React.CSSProperties = {
   borderRadius: 16,
   background: "rgba(15, 23, 42, 0.9)",
   boxShadow: "0 20px 40px rgba(0,0,0,0.6)",
-  border: "1px solid rgba(148, 163, 184, 0.3)",
+  border: line.edge,
 };
 
 const titleStyle: React.CSSProperties = {

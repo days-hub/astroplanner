@@ -8,7 +8,7 @@ import type React from "react";
 import { useEffect, useState } from "react";
 import api, { apiErrorMessage } from "./api";
 import { TelescopeIcon } from "./icons";
-import { btnPrimary, btnSecondarySm, card, field, fontSize, text } from "./theme";
+import { btnPrimary, btnSecondarySm, card, field, fontSize, line, surface, text } from "./theme";
 
 type AdvisorStatus = { enabled: boolean; model: string | null };
 
@@ -102,8 +102,7 @@ const answerStyle: React.CSSProperties = {
   color: text.primary,
   whiteSpace: "pre-wrap",
   borderRadius: 12,
-  border: "1px solid rgba(148,163,184,0.22)",
-  background: "rgba(2,6,23,0.35)",
+  background: surface.inset,
   padding: "0.75rem 0.9rem",
 };
 
@@ -113,8 +112,8 @@ const dataStyle: React.CSSProperties = {
   whiteSpace: "pre",
   overflowX: "auto",
   borderRadius: 12,
-  border: "1px solid rgba(148,163,184,0.18)",
-  background: "rgba(2,6,23,0.5)",
+  border: line.hairline,
+  background: surface.sunken,
   padding: "0.6rem 0.75rem",
   color: text.secondary,
   maxHeight: 260,
@@ -221,7 +220,7 @@ export default function AdvisorPanel({
             // Inside the Tonight card the verdict is the headline; the ask
             // box supports it and shouldn't compete for the same attention.
             ...(compact
-              ? { background: "rgba(2,6,23,0.35)", border: "1px solid rgba(148,163,184,0.22)" }
+              ? { background: surface.sunken, border: line.hairline }
               : null),
           }}
         />

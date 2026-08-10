@@ -4,7 +4,7 @@
 // Tonight, the Sky advisor, and the session form all read from this, so the
 // controls live here once instead of being repeated in each card.
 import type React from "react";
-import { field, fontSize, selectField, text } from "./theme";
+import { field, fontSize, line, selectField, surface, text } from "./theme";
 
 interface LocationOption {
   id: number;
@@ -30,8 +30,8 @@ const barStyle: React.CSSProperties = {
   gap: "1.1rem",
   flexWrap: "wrap",
   borderRadius: 14,
-  border: "1px solid rgba(148,163,184,0.28)",
-  background: "rgba(2,6,23,0.55)",
+  border: line.edge,
+  background: surface.raised,
   padding: "0.65rem 0.9rem",
   marginBottom: "1rem",
 };

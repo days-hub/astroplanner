@@ -20,10 +20,13 @@ import {
   btnDangerIcon as iconDangerButtonSm,
   btnPrimary,
   btnPrimarySm,
-  btnSecondary,
   btnSecondarySm,
   card as cardStyle,
   field as fieldStyle,
+  inset,
+  line,
+  surface,
+  pillShape,
   selectField as selectFieldStyle,
   headerRow as panelHeaderRow,
   metaLine as metaLineStyle,
@@ -106,10 +109,14 @@ const appInnerStyle: React.CSSProperties = {
   display: "grid",
   gap: "1.1rem",
 };
-const headerRowStyle: React.CSSProperties = {
+const appBarStyle: React.CSSProperties = {
   display: "flex",
-  justifyContent: "space-between",
-  alignItems: "center",
+  alignItems: "flex-end",
+  gap: "2.25rem",
+  flexWrap: "wrap",
+  paddingBottom: 0,
+  marginBottom: "0.4rem",
+  borderBottom: "1px solid rgba(148,163,184,0.22)",
 };
 
 const pillStyle: React.CSSProperties = {
@@ -124,9 +131,8 @@ const statusPillBase: React.CSSProperties = {
   textTransform: "uppercase",
   letterSpacing: "0.08em",
   padding: "0.18rem 0.55rem",
-  borderRadius: 9999,
-  border: "1px solid rgba(148,163,184,0.25)",
-  background: "rgba(148,163,184,0.08)",
+  ...pillShape,
+  background: "rgba(148,163,184,0.12)",
   color: "#cbd5e1",
   lineHeight: 1.2,
   whiteSpace: "nowrap",
@@ -146,9 +152,7 @@ const statGridStyle: React.CSSProperties = {
 };
 
 const statChipStyle: React.CSSProperties = {
-  borderRadius: 12,
-  border: "1px solid rgba(148,163,184,0.22)",
-  background: "rgba(2,6,23,0.35)",
+  ...inset,
   padding: "0.45rem 0.6rem",
   display: "flex",
   justifyContent: "space-between",
@@ -1456,10 +1460,8 @@ async function handleDeleteSession(id: number) {
           style={{
             flex: "1.2 1 360px", // grows a bit more than logs
             minWidth: 360,       // makes it visibly wider
+            ...inset,
             padding: "0.85rem 1rem",
-            borderRadius: 12,
-            border: "1px solid rgba(148,163,184,0.35)",
-            backgroundColor: "rgba(15,23,42,0.65)",
           }}
         >
           <h4 style={{ fontSize: "0.95rem", marginBottom: "0.35rem" }}>
@@ -1534,10 +1536,8 @@ async function handleDeleteSession(id: number) {
           style={{
             flex: "1 1 440px",
             minWidth: 440,
+            ...inset,
             padding: "0.85rem 1rem",
-            borderRadius: 12,
-            border: "1px solid rgba(148,163,184,0.35)",
-            backgroundColor: "rgba(15,23,42,0.65)",
           }}
         >
           <div style={panelHeaderRow}>
@@ -1561,9 +1561,9 @@ async function handleDeleteSession(id: number) {
               style={{
                 marginBottom: "0.75rem",
                 padding: "0.6rem",
-                border: "1px solid rgba(148,163,184,0.22)",
                 borderRadius: 12,
-                backgroundColor: "rgba(2,6,23,0.35)",
+                border: line.hairline,
+                background: surface.sunken,
               }}
             >
               <label style={{ display: "block", fontSize: "0.8rem" }}>
@@ -1635,8 +1635,8 @@ async function handleDeleteSession(id: number) {
                   key={log.id}
                   style={{
                     borderRadius: 12,
-                    border: "1px solid rgba(148,163,184,0.22)",
-                    background: "rgba(2,6,23,0.35)",
+                    border: line.hairline,
+                    background: surface.sunken,
                     padding: "0.6rem 0.7rem",
                   }}
                 >
@@ -1762,30 +1762,36 @@ async function handleDeleteSession(id: number) {
     <div style={{ ...appShellStyle, position: "relative" }}>
       <SpaceBackground targetName={backgroundTargetName} />
       <div style={{ ...appInnerStyle, position: "relative", zIndex: 1 }}>
-        <div style={headerRowStyle}>
-          <div>
+        {/* One app bar rather than a brand row stacked above a tab row. The
+            tabs used to sit alone on their own line with the whole right-hand
+            side empty, which made the shell read as an afterthought above the
+            app. Brand, navigation and account now share a single baseline and
+            a single rule. */}
+        <header style={appBarStyle}>
+          <div style={{ minWidth: 0 }}>
             <div style={pillStyle}>Observation Planner</div>
             <h1
               style={{
-                fontSize: fontSize.hero,
+                fontSize: "1.32rem",
                 fontWeight: 700,
-                marginTop: "0.3rem",
+                margin: "0.1rem 0 0",
                 letterSpacing: "-0.02em",
-                lineHeight: 1.1,
+                lineHeight: 1.15,
               }}
             >
               AstroPlanner
             </h1>
           </div>
-          <button onClick={onLogout} style={btnSecondary}>
+
+          <TabNav />
+
+          <button onClick={onLogout} style={{ ...btnSecondarySm, marginLeft: "auto" }}>
             Logout
           </button>
-        </div>
+        </header>
 
         {loading && <div>Loading…</div>}
         {error && <div style={{ color: "#fca5a5" }}>{error}</div>}
-
-        <TabNav />
 
         <div style={{ animation: "fadeIn 180ms ease" }}>
           <Routes>
