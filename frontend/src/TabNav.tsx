@@ -17,21 +17,28 @@ const TABS = [
   { to: "/locations", label: "Locations" },
 ];
 
+// No border of its own any more: the app bar it sits in owns the rule, so
+// the tabs and the wordmark share one baseline instead of stacking two
+// separate horizontal lines down the page.
 const navStyle: React.CSSProperties = {
   display: "flex",
-  gap: "0.35rem",
-  borderBottom: "1px solid rgba(148,163,184,0.22)",
-  marginBottom: "0.9rem",
+  gap: "0.9rem",
 };
 
 function linkStyle(active: boolean): React.CSSProperties {
   return {
-    padding: "0.55rem 0.9rem",
-    fontSize: fontSize.body,
+    // Roomier than before, and the inactive state is secondary rather than
+    // muted — the shell was legible but timid against the app beneath it.
+    padding: "0.7rem 0.2rem 0.75rem",
+    fontSize: fontSize.section,
     fontWeight: active ? 700 : 500,
-    color: active ? text.primary : text.muted,
+    color: active ? text.primary : text.secondary,
     textDecoration: "none",
-    borderBottom: active ? "2px solid #a855f7" : "2px solid transparent",
+    // Blue, because a tab is a *selection*, not an action. The app already
+    // says "blue = chosen" everywhere else — the selected outlook night, the
+    // CURRENT site, the active sort chip — and teal was overloaded doing
+    // double duty as both "good conditions" and "click me".
+    borderBottom: active ? "3px solid #60a5fa" : "3px solid transparent",
     marginBottom: -1,
     transition: "color 150ms ease",
   };

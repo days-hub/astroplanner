@@ -3,6 +3,7 @@
 // Small structured-input controls for observation logs: tap-once quality
 // segments and a star rating, replacing free-text fields.
 import type React from "react";
+import { line, pillShape, surface, text } from "./theme";
 
 export function SegmentedControl({
   options,
@@ -24,15 +25,15 @@ export function SegmentedControl({
             aria-pressed={selected}
             onClick={() => onChange(selected ? null : opt.toLowerCase())}
             style={{
-              borderRadius: 9999,
+              // A segmented choice, so it keeps the capsule shape — the
+              // outline is spent on which segment is chosen.
+              ...pillShape,
               padding: "0.3rem 0.7rem",
               fontSize: "0.8rem",
               cursor: "pointer",
-              border: selected
-                ? "1px solid rgba(99,102,241,0.7)"
-                : "1px solid rgba(148,163,184,0.35)",
-              background: selected ? "rgba(99,102,241,0.25)" : "rgba(2,6,23,0.35)",
-              color: selected ? "#e0e7ff" : "#cbd5e1",
+              border: selected ? line.focus : "1px solid transparent",
+              background: selected ? "rgba(59,130,246,0.22)" : surface.inset,
+              color: selected ? "#dbeafe" : text.secondary,
               textTransform: "capitalize",
               transition: "background 120ms ease, border-color 120ms ease",
             }}
