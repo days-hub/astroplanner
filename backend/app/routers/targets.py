@@ -143,6 +143,10 @@ class TonightSummary(BaseModel):
     clear_from_local: Optional[str] = None
     clear_to_local: Optional[str] = None
     clear_hours: float = 0.0
+    # When the Moon drops below the horizon inside the dark window. Lets the
+    # night track place the Moon from a real time instead of inferring a
+    # position from the up-fraction, which would be an invented fact.
+    moonset_local: Optional[str] = None
     focus: Optional[str] = None
     cloud_trend: Optional[str] = None  # plain-language shape of the night
     recommendation: Optional[Recommendation] = None
@@ -883,6 +887,11 @@ async def tonight_summary(
         summary.clear_from_local = window[0].astimezone(zone).strftime("%H:%M")
         summary.clear_to_local = window[1].astimezone(zone).strftime("%H:%M")
         summary.clear_hours = round((window[1] - window[0]).total_seconds() / 3600, 1)
+
+    if (night.moon_up_fraction or 0.0) > 0:
+        moonset = _moonset_after(loc.latitude, loc.longitude, win_start, win_end)
+        if moonset:
+            summary.moonset_local = moonset.astimezone(zone).strftime("%H:%M")
 
     summary.focus, _ = observing_focus(
         cloud_cover_percent=night.cloud_cover_percent,
