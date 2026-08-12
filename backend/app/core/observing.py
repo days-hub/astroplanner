@@ -323,11 +323,22 @@ SWITCH_MARGIN_PER_100KM = 18.0
 
 
 def switch_margin(distance_km: Optional[float]) -> float:
-    """Score improvement a site must beat before it's worth relocating to."""
+    """Score improvement a site must beat before it's worth relocating to.
+
+    Deliberately uncapped. An earlier version clamped the distance at 400 km
+    "so a flight isn't infinite", which had it exactly backwards: it made
+    Sydney cost the same as a four-hour drive, and the app cheerfully
+    suggested a 7,826 km trip from Tokyo because the sky there was clearer.
+    For a decision about tonight, an intercontinental journey *should* be
+    unreachable. sky_score spans -47 to 310, so the largest gain that can
+    physically exist is ~357 points; the bar passes that around 1,950 km and
+    nothing beyond it can ever qualify. That is the intended behaviour, and
+    it falls out of the arithmetic rather than needing a special case.
+    """
     if distance_km is None:
         return SWITCH_MARGIN_BASE
     return round(
-        SWITCH_MARGIN_BASE + (min(distance_km, 400.0) / 100.0) * SWITCH_MARGIN_PER_100KM,
+        SWITCH_MARGIN_BASE + (max(0.0, distance_km) / 100.0) * SWITCH_MARGIN_PER_100KM,
         2,
     )
 
@@ -362,12 +373,21 @@ def choose_location(sites: list[dict], current_id: Optional[int]) -> dict:
         return f"{c}% cloud" if c is not None else "cloud unknown"
 
     def window(s: dict) -> str:
+        # The article belongs to the phrase, not the caller. Callers used to
+        # write "and a {window(s)}", which produced "and a no clear window"
+        # on exactly the nights the advice mattered most.
         h = s.get("clear_hours") or 0
-        return f"{h:g}-hour clear window" if h else "no clear window"
+        return f"a {h:g}-hour clear window" if h else "no clear window"
 
     def away(s: dict) -> str:
         d = s.get("distance_km")
         return f"{round(d)} km away" if d else "nearby"
+
+    def journey(s: dict) -> str:
+        # Anything you could plausibly do after work is "the drive". Past that
+        # it isn't one, and calling 7,826 km a drive reads as a broken string.
+        d = s.get("distance_km") or 0
+        return "the drive" if d <= 300 else "the distance"
 
     def all_sites_tail() -> str:
         return f", the best of your {len(sites)} saved sites." if len(sites) > 1 else "."
@@ -385,7 +405,7 @@ def choose_location(sites: list[dict], current_id: Optional[int]) -> dict:
         return {
             "status": "stay_best",
             "location_id": best["id"],
-            "reason": f"{clouds(best)} and a {window(best)}{all_sites_tail()}",
+            "reason": f"{clouds(best)} and {window(best)}{all_sites_tail()}",
         }
 
     # How much each better site beats the current one by, over and above what
@@ -398,7 +418,7 @@ def choose_location(sites: list[dict], current_id: Optional[int]) -> dict:
         return {
             "status": "stay_best",
             "location_id": current["id"],
-            "reason": f"{clouds(current)} and a {window(current)}{all_sites_tail()}",
+            "reason": f"{clouds(current)} and {window(current)}{all_sites_tail()}",
         }
 
     worth_it = [s for s in better if net(s) >= 0]
@@ -410,7 +430,7 @@ def choose_location(sites: list[dict], current_id: Optional[int]) -> dict:
             "status": "switch",
             "location_id": pick["id"],
             "reason": (
-                f"{clouds(pick)} vs {clouds(current)} at {current['name']}, and a "
+                f"{clouds(pick)} vs {clouds(current)} at {current['name']}, and "
                 f"{window(pick)} vs {window(current)}. {away(pick)}."
             ),
         }
@@ -422,9 +442,9 @@ def choose_location(sites: list[dict], current_id: Optional[int]) -> dict:
         "status": "stay_nearby",
         "location_id": current["id"],
         "reason": (
-            f"{clouds(current)} and a {window(current)}. "
+            f"{clouds(current)} and {window(current)}. "
             f"{runner_up['name']} is clearer ({clouds(runner_up)}) but it's "
-            f"{away(runner_up)}, which isn't enough gain for the drive."
+            f"{away(runner_up)}, which isn't enough gain for {journey(runner_up)}."
         ),
     }
 

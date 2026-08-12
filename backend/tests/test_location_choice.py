@@ -55,8 +55,32 @@ class TestSwitchMargin:
     def test_bar_rises_with_distance(self):
         assert switch_margin(0) < switch_margin(50) < switch_margin(300)
 
-    def test_capped_so_a_flight_is_not_infinite(self):
-        assert switch_margin(400) == switch_margin(5000)
+    def test_margin_keeps_rising_past_a_drive(self):
+        """The cap this replaces was the bug: clamping at 400 km made Sydney
+        cost the same as a four-hour drive, and the app recommended a
+        7,826 km trip from Tokyo because the sky there was clearer."""
+        assert switch_margin(7826) > switch_margin(400) > switch_margin(100)
+
+    def test_intercontinental_is_never_worth_it(self):
+        """Past a certain distance no forecast can clear the bar, whatever the
+        sky is doing. Derived from sky_score's own range rather than a magic
+        number, so retuning the scoring weights can't silently make Sydney
+        reachable again."""
+        best = sky_score("good", 10.0, 0, moon_illumination=0.0, wind_kmh=0.0)
+        worst = sky_score(
+            "poor", 0.0, 100, moon_illumination=1.0, moon_up_fraction=1.0, wind_kmh=60.0
+        )
+        largest_gain_that_can_exist = best - worst
+        assert switch_margin(7826) > largest_gain_that_can_exist
+
+        # ...so even a flawless sky in Sydney loses to a mediocre one at home.
+        rows = [
+            site(2, "Sydney", best, 10.0, 0, 7826),
+            site(1, "Tokyo", worst, 2.0, 60, 0),
+        ]
+        c = choose_location(rows, current_id=1)
+        assert c["status"] == "stay_nearby", c
+        assert c["location_id"] == 1
 
 
 class TestChooseLocation:
@@ -143,3 +167,45 @@ class TestConsidersEveryCandidate:
         c = choose_location(rows, current_id=1)
         assert c["status"] == "stay_best"
         assert "best of your 2 saved sites" in c["reason"]
+
+
+class TestTheReasonReadsLikeEnglish:
+    """The reason line is the one sentence a visitor actually reads. Two
+    phrasings used to break on the nights the advice mattered most."""
+
+    def test_no_clear_window_does_not_get_an_article(self):
+        # "82% cloud and a no clear window." The article was hardcoded by the
+        # caller while the phrase it introduced could be negative.
+        rows = [
+            site(2, "Torrance Barrens", 135.0, 3.9, 20, 140),
+            site(1, "Toronto", 90.0, 0.0, 82, 0),  # socked in: no clear window
+        ]
+        c = choose_location(rows, current_id=1)
+        assert "a no clear window" not in c["reason"], c["reason"]
+        assert "no clear window" in c["reason"], c["reason"]
+
+    def test_a_real_window_still_gets_its_article(self):
+        rows = [site(1, "Toronto", 147.0, 3.0, 26, 0)]
+        c = choose_location(rows, current_id=1)
+        assert "a 3-hour clear window" in c["reason"], c["reason"]
+
+    def test_a_short_hop_is_called_a_drive(self):
+        rows = [
+            site(2, "Torrance Barrens", 135.0, 3.9, 20, 140),
+            site(1, "Toronto", 125.0, 3.0, 27, 0),
+        ]
+        c = choose_location(rows, current_id=1)
+        assert c["status"] == "stay_nearby"
+        assert "for the drive" in c["reason"], c["reason"]
+
+    def test_a_flight_is_not_called_a_drive(self):
+        # Sydney from Tokyo. "7826 km away, which isn't enough gain for the
+        # drive" reads as a broken template, not as advice.
+        rows = [
+            site(2, "Sydney", 205.0, 5.2, 3, 7826),
+            site(1, "Tokyo", 120.0, 2.0, 82, 0),
+        ]
+        c = choose_location(rows, current_id=1)
+        assert c["status"] == "stay_nearby"
+        assert "the drive" not in c["reason"], c["reason"]
+        assert "7826 km away" in c["reason"], c["reason"]

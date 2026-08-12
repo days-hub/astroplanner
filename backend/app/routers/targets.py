@@ -481,17 +481,28 @@ async def compare_locations(
         raise HTTPException(status_code=400, detail="Invalid timezone")
 
     async def summarize(loc: Location) -> LocationComparison:
+        # Each site's night is computed in *its own* timezone. Using the
+        # reference site's zone for everything meant that selecting Tokyo
+        # scanned Toronto's night in Asia/Tokyo time, landing ~13 hours out
+        # and mostly in the past, so every other row came back "No forecast".
+        # "The night of the 12th" sensibly means the 12th where the site is.
+        site_tz = loc.timezone or tz_name
+        try:
+            site_zone = ZoneInfo(site_tz)
+        except ZoneInfoNotFoundError:
+            site_tz, site_zone = tz_name, zone
+
         night = compute_night_info(
-            loc.latitude, loc.longitude, date_local, tz_name, zone
+            loc.latitude, loc.longitude, date_local, site_tz, site_zone
         )
         entry = LocationComparison(
             location_id=loc.id,
             name=loc.name,
             region=loc.region,
             moon_illumination=round(night.moon_illumination, 3),
-            dark_start_local=night.dark_start.astimezone(zone).strftime("%H:%M")
+            dark_start_local=night.dark_start.astimezone(site_zone).strftime("%H:%M")
             if night.dark_start else None,
-            dark_end_local=night.dark_end.astimezone(zone).strftime("%H:%M")
+            dark_end_local=night.dark_end.astimezone(site_zone).strftime("%H:%M")
             if night.dark_end else None,
         )
         if reference:
@@ -502,17 +513,17 @@ async def compare_locations(
                 1,
             )
 
-        rows = await add_conditions(night, loc.latitude, loc.longitude, zone)
+        rows = await add_conditions(night, loc.latitude, loc.longitude, site_zone)
         entry.conditions = night.conditions
         entry.conditions_summary = night.conditions_summary
         entry.cloud_cover_percent = night.cloud_cover_percent
 
         if rows:
-            win_start, win_end = _night_window(night, zone)
+            win_start, win_end = _night_window(night, site_zone)
             window = find_clear_window(rows, win_start, win_end)
             if window:
-                entry.clear_from_local = window[0].astimezone(zone).strftime("%H:%M")
-                entry.clear_to_local = window[1].astimezone(zone).strftime("%H:%M")
+                entry.clear_from_local = window[0].astimezone(site_zone).strftime("%H:%M")
+                entry.clear_to_local = window[1].astimezone(site_zone).strftime("%H:%M")
                 entry.clear_hours = round(
                     (window[1] - window[0]).total_seconds() / 3600, 1
                 )
@@ -540,14 +551,14 @@ async def compare_locations(
         # "Next clear window" only means anything when tonight has none
         if include_next_clear and entry.clear_hours == 0:
             found = await _next_clear_window(
-                loc.latitude, loc.longitude, date_local, tz_name, zone
+                loc.latitude, loc.longitude, date_local, site_tz, site_zone
             )
             if found:
                 day, start, end = found
                 entry.next_clear_date = day.isoformat()
                 entry.next_clear_weekday = day.strftime("%A")
-                entry.next_clear_from_local = start.astimezone(zone).strftime("%H:%M")
-                entry.next_clear_to_local = end.astimezone(zone).strftime("%H:%M")
+                entry.next_clear_from_local = start.astimezone(site_zone).strftime("%H:%M")
+                entry.next_clear_to_local = end.astimezone(site_zone).strftime("%H:%M")
         return entry
 
     # One forecast request per site, in parallel rather than in series
