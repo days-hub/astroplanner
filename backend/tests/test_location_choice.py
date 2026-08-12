@@ -76,8 +76,11 @@ class TestChooseLocation:
         # while the reason line says somewhere else is clearer.
         assert c["status"] == "stay_nearby"
         assert c["location_id"] == 1
-        # ...and it says why, rather than pretending it saw nothing
-        assert "Port Perry" in c["reason"] and "not enough gain" in c["reason"]
+        # ...and it says why, rather than pretending it saw nothing. Checks
+        # the substance — the alternative is named and its distance stated —
+        # rather than the exact phrasing around them.
+        assert "Port Perry" in c["reason"]
+        assert "320 km" in c["reason"]
 
     def test_recommends_a_nearby_site_that_is_clearly_better(self):
         rows = [site(2, "Port Perry", 168.8, 5.0, 4, 56), site(1, "Toronto", 147.0, 3.1, 26, 0)]

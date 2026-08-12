@@ -214,18 +214,18 @@ def observing_focus(
     moon_load = moon_illumination * moon_up_fraction
 
     if cloud_cover_percent > 40:
-        return "planetary", "Breaks in the cloud — planets and the Moon only"
+        return "planetary", "Breaks in the cloud. Planets and the Moon only."
 
     if not has_darkness:
-        return "planetary", "No full darkness — planets and the Moon"
+        return "planetary", "No full darkness. Planets and the Moon."
 
     if moon_load >= 0.45:
-        return "planetary", "Bright Moon — planets, doubles and lunar detail"
+        return "planetary", "Bright Moon. Good for planets, doubles and lunar detail."
 
     if moon_load >= 0.2:
-        return "mixed", "Some moonlight — brighter deep-sky objects and planets"
+        return "mixed", "Some moonlight. Brighter deep-sky objects and planets."
 
-    return "deep-sky", "Dark and clear — good for faint deep-sky targets"
+    return "deep-sky", "Dark and clear. Good for faint deep-sky targets."
 
 
 # Verdict → sortable quality, so "best upcoming night" is a real ordering
@@ -370,7 +370,7 @@ def choose_location(sites: list[dict], current_id: Optional[int]) -> dict:
         return f"{round(d)} km away" if d else "nearby"
 
     def all_sites_tail() -> str:
-        return f" — the best of your {len(sites)} saved sites." if len(sites) > 1 else "."
+        return f", the best of your {len(sites)} saved sites." if len(sites) > 1 else "."
 
     if not usable:
         return {
@@ -424,7 +424,7 @@ def choose_location(sites: list[dict], current_id: Optional[int]) -> dict:
         "reason": (
             f"{clouds(current)} and a {window(current)}. "
             f"{runner_up['name']} is clearer ({clouds(runner_up)}) but it's "
-            f"{away(runner_up)} — not enough gain for the drive."
+            f"{away(runner_up)}, which isn't enough gain for the drive."
         ),
     }
 
@@ -455,7 +455,7 @@ def describe_cloud_trend(
     if worst <= 15:
         return "Clear all night"
     if clear_count == 0:
-        return f"Cloudy throughout — thinnest around {best_time}"
+        return f"Cloudy throughout, thinnest around {best_time}"
 
     if clear_count == len(values):
         return "Mostly clear all night"
@@ -466,10 +466,10 @@ def describe_cloud_trend(
         i for i, v in enumerate(reversed(values)) if v <= clear_max
     )
     if last_clear >= len(values) - 2 and first_clear > 0:
-        return f"Clearing later — best after {points[first_clear][0]}"
+        return f"Clearing later, best after {points[first_clear][0]}"
     if first_clear == 0 and last_clear < len(values) - 2:
         return f"Clear early, clouding over after {points[last_clear][0]}"
-    return f"Broken cloud — best around {best_time}"
+    return f"Broken cloud, best around {best_time}"
 
 
 def recommend_night(
@@ -507,7 +507,7 @@ def recommend_night(
                 f"No usable gap in the cloud that night.{when_instead}",
             )
         return (
-            "Marginal — only if the cloud breaks",
+            "Marginal, only if the cloud breaks",
             f"About {clear_hours:g}h of thinner cloud, but don't count on it."
             f"{when_instead}",
         )
@@ -522,7 +522,7 @@ def recommend_night(
         if not has_darkness:
             return (
                 "Worth a look, but no real darkness",
-                "Twilight all night — fine for the Moon and planets, not deep sky.",
+                "Twilight all night. Fine for the Moon and planets, not deep sky.",
             )
         return (
             "Worth setting up",
@@ -532,7 +532,7 @@ def recommend_night(
     # good
     if focus == "deep-sky":
         return (
-            "Worth setting up — a good night",
+            "A good night, worth setting up",
             f"Dark and clear for about {clear_hours:g}h. The best conditions "
             "you'll get for faint targets.",
         )

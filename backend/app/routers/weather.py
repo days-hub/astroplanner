@@ -61,7 +61,7 @@ def summarize_session_forecast(cloud_cover_percent: int) -> tuple[str, str]:
     """
     band = cloud_band(cloud_cover_percent)
     if band == "cloudy":
-        return "poor", f"Not recommended — {cloud_cover_percent}% cloud cover forecast"
+        return "poor", f"Not recommended · {cloud_cover_percent}% cloud cover"
     if band == "partly":
-        return "fair", f"Marginal — {cloud_cover_percent}% cloud cover forecast"
-    return "good", f"Good forecast — {cloud_cover_percent}% cloud cover"
+        return "fair", f"Marginal · {cloud_cover_percent}% cloud cover"
+    return "good", f"Good forecast · {cloud_cover_percent}% cloud cover"

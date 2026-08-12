@@ -147,7 +147,7 @@ export default function BestLocation({
       : rec?.status === "switch"
         ? `A better saved site is available: ${recommended.name}`
         : rec?.status === "stay_nearby"
-          ? `Stay at ${recommended.name} — the clearer sites aren't worth the drive`
+          ? `Stay at ${recommended.name}, nothing clearer is worth the drive`
           : `${recommended.name} is your best site tonight`;
 
   const detail = rec?.reason ?? "";

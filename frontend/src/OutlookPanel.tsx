@@ -119,10 +119,30 @@ export default function OutlookPanel({
         Forecast during each night's dark window. Pick a night to plan it.
       </div>
 
+      {/* A skeleton rather than a line of text: this fetch is the slowest on
+          the page, and a first-time visitor's very first load is always cold.
+          Showing the shape of what's coming reads as loading; a sentence in
+          the middle of an empty card reads as broken. */}
       {loading && (
-        <div style={{ fontSize: fontSize.body, color: text.secondary, marginTop: "0.9rem" }}>
-          Checking the week ahead…
+        <div style={{ display: "grid", gap: "0.4rem", marginTop: "0.9rem" }} aria-hidden>
+          <div className="skeleton" style={{ height: 86, borderRadius: 14 }} />
+          {Array.from({ length: 7 }).map((_, i) => (
+            <div key={i} className="skeleton" style={{ height: 38, borderRadius: 12 }} />
+          ))}
         </div>
+      )}
+      {loading && (
+        <span
+          style={{
+            position: "absolute",
+            width: 1,
+            height: 1,
+            overflow: "hidden",
+            clip: "rect(0 0 0 0)",
+          }}
+        >
+          Checking the week ahead
+        </span>
       )}
       {error && (
         <div style={{ color: "#fca5a5", fontSize: fontSize.body, marginTop: "0.9rem" }}>
@@ -177,8 +197,8 @@ export default function OutlookPanel({
             color: text.secondary,
           }}
         >
-          No night in the next week looks worth setting up for — every night is
-          forecast cloudy.
+          No night in the next week looks worth setting up for. Every night
+          is forecast cloudy.
         </div>
       )}
 

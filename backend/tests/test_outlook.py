@@ -214,7 +214,9 @@ class TestRecommendation:
         head, _ = recommend_night(
             conditions="good", clear_hours=4.5, focus="deep-sky", has_darkness=True,
         )
-        assert "Worth setting up" in head
+        # Assert the sentiment, not the sentence: this is marketing copy and
+        # pinning its exact wording makes every phrasing tweak a test failure.
+        assert "worth setting up" in head.lower()
 
     def test_no_forecast_does_not_pretend_to_advise(self):
         head, _ = recommend_night(

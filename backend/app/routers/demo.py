@@ -76,7 +76,7 @@ def _seed_demo_data(db: Session, user: User) -> None:
         latitude=43.71,
         longitude=-79.40,
         timezone="America/Toronto",
-        notes="Home base — heavy light pollution, fine for the Moon and planets.",
+        notes="Home base. Heavy light pollution, fine for the Moon and planets.",
         owner=user,
     )
     barrens = Location(
@@ -199,7 +199,7 @@ def _seed_demo_data(db: Session, user: User) -> None:
             ObservationLog(
                 session=m13,
                 notes=(
-                    "Resolved to the core at 150x — the best I've seen it. "
+                    "Resolved to the core at 150x, the best I've seen it. "
                     "No dew all night and the Milky Way was casting shadows."
                 ),
                 seeing="excellent",
