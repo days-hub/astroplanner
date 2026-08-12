@@ -338,6 +338,7 @@ export default function TonightPanel({
           that was previously empty and answers "when does it clear?", which
           the nightly average can't. */}
       <div
+        className="col-2"
         style={{
           display: "grid",
           gridTemplateColumns: "minmax(0, 1.15fr) minmax(0, 1fr)",
@@ -370,7 +371,7 @@ export default function TonightPanel({
                   doesn't support — so the label softens with the verdict. */}
               <div style={{ fontSize: fontSize.small, color: text.muted }}>
                 {night.conditions === "poor"
-                  ? "Best available window (conditions poor)"
+                  ? "Best of a poor night"
                   : "Best observing window"}
               </div>
               <div
@@ -420,10 +421,41 @@ export default function TonightPanel({
         )}
       </div>
 
+      {/* Mirrors the real layout: verdict line, then the two columns. The
+          page doesn't jump when the data lands. */}
       {loading && (
-        <div style={{ fontSize: fontSize.body, color: text.secondary, marginTop: "1rem" }}>
-          Reading the sky…
+        <div style={{ marginTop: "1rem" }} aria-hidden>
+          <div className="skeleton" style={{ height: 26, width: "58%", borderRadius: 8 }} />
+          <div
+            className="skeleton"
+            style={{ height: 15, width: "76%", borderRadius: 8, marginTop: "0.6rem" }}
+          />
+          <div
+            className="col-2"
+            style={{
+              display: "grid",
+              gridTemplateColumns: "minmax(0, 1.15fr) minmax(0, 1fr)",
+              gap: "1.5rem",
+              marginTop: "1.3rem",
+            }}
+          >
+            <div className="skeleton" style={{ height: 150, borderRadius: 12 }} />
+            <div className="skeleton" style={{ height: 150, borderRadius: 12 }} />
+          </div>
         </div>
+      )}
+      {loading && (
+        <span
+          style={{
+            position: "absolute",
+            width: 1,
+            height: 1,
+            overflow: "hidden",
+            clip: "rect(0 0 0 0)",
+          }}
+        >
+          Reading the sky
+        </span>
       )}
       {error && (
         <div style={{ color: "#fca5a5", fontSize: fontSize.body, marginTop: "1rem" }}>
@@ -453,12 +485,12 @@ export default function TonightPanel({
           >
             Above the horizon at {fmtLocalInput(data.sample_time_local)}
             {night?.dark_start ? ", an hour into full darkness" : ""}
-            {allPoor ? " — but poor viewing expected" : ""}
+            {allPoor ? ". Poor viewing expected." : ""}
           </div>
 
           {visible.length === 0 ? (
             <div style={{ fontSize: fontSize.body, color: text.secondary }}>
-              Nothing on the preset list is above the horizon at that time — try
+              Nothing on the preset list is above the horizon at that time. Try
               another night.
             </div>
           ) : (

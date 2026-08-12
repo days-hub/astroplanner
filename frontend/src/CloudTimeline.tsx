@@ -147,9 +147,10 @@ export default function CloudTimeline({
           ),
         )}
 
-        <path d={fillPath} fill="url(#cloudFill)" />
+        <path className="draw-in" d={fillPath} fill="url(#cloudFill)" />
         {/* The lit top edge — where the cloud deck actually sits */}
         <path
+          className="draw-in"
           d={strokePath}
           fill="none"
           stroke={CLOUD_TOP}
@@ -169,7 +170,16 @@ export default function CloudTimeline({
           vectorEffect="non-scaling-stroke"
         />
         {band && (
-          <rect x={band.x} y={H + 1.5} width={band.w} height={4} rx={2} fill={ACCENT} />
+          <rect
+            className="grow-x"
+            style={{ transformOrigin: `${band.x}px center` }}
+            x={band.x}
+            y={H + 1.5}
+            width={band.w}
+            height={4}
+            rx={2}
+            fill={ACCENT}
+          />
         )}
 
         {/* Hover readout per hour, across the full column height */}
@@ -182,7 +192,7 @@ export default function CloudTimeline({
             height={H}
             fill="transparent"
           >
-            <title>{`${p.time_local} — ${p.cloud_cover}% cloud`}</title>
+            <title>{`${p.time_local} · ${p.cloud_cover}% cloud`}</title>
           </rect>
         ))}
       </svg>

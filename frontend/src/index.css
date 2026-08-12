@@ -80,6 +80,185 @@ input[type="datetime-local"]::-webkit-calendar-picker-indicator:hover {
   opacity: 1;
 }
 
+
+/* ---- Motion ---------------------------------------------------------------
+   The app is a calm, dense dark UI, so motion has one job: make it feel
+   responsive and alive without adding noise. Three rules:
+
+     * Nothing loops. Ambient looping motion in a data tool is decoration
+       that never stops asking for attention.
+     * Data animates, chrome doesn't. A chart drawing itself in reads as the
+       app doing work; a card sliding around reads as a template.
+     * Everything here is switched off wholesale under prefers-reduced-motion
+       at the bottom of this file, including the durations, so a reduced
+       -motion visitor gets the finished state instantly rather than a fast
+       version of the same movement. */
+
+@keyframes riseIn {
+  from { opacity: 0; transform: translateY(9px); }
+  to   { opacity: 1; transform: none; }
+}
+
+/* Wipes a chart in from its left edge, so a timeline builds along its own
+   time axis rather than fading in as a block. */
+@keyframes drawIn {
+  from { clip-path: inset(0 100% 0 0); }
+  to   { clip-path: inset(0 0 0 0); }
+}
+
+@keyframes growX {
+  from { transform: scaleX(0); }
+  to   { transform: scaleX(1); }
+}
+
+@keyframes shimmer {
+  from { background-position: -420px 0; }
+  to   { background-position: 420px 0; }
+}
+
+/* Page sections arrive in reading order rather than all at once. The stagger
+   is small: enough to feel sequenced, not enough to make anyone wait. */
+.stagger > * {
+  animation: riseIn 420ms cubic-bezier(0.22, 0.61, 0.36, 1) both;
+}
+.stagger > *:nth-child(1) { animation-delay: 0ms; }
+.stagger > *:nth-child(2) { animation-delay: 70ms; }
+.stagger > *:nth-child(3) { animation-delay: 140ms; }
+.stagger > *:nth-child(4) { animation-delay: 210ms; }
+.stagger > *:nth-child(n + 5) { animation-delay: 260ms; }
+
+.draw-in {
+  animation: drawIn 620ms cubic-bezier(0.22, 0.61, 0.36, 1) both;
+}
+
+/* Bars that represent a span of time grow from the moment they start. */
+.grow-x {
+  transform-origin: left center;
+  animation: growX 520ms cubic-bezier(0.22, 0.61, 0.36, 1) both;
+}
+
+/* Placeholder for content still being fetched. A recruiter's very first
+   load is cold, so this is one of the first things anyone sees. */
+.skeleton {
+  border-radius: 8px;
+  background: linear-gradient(
+    90deg,
+    rgba(148, 163, 184, 0.06) 0%,
+    rgba(148, 163, 184, 0.14) 50%,
+    rgba(148, 163, 184, 0.06) 100%
+  );
+  background-size: 420px 100%;
+  animation: shimmer 1250ms linear infinite;
+}
+
+/* Controls should answer the pointer. Tiny, but it's the difference between
+   a mockup and something that feels built. */
+button:not(:disabled),
+a[role="button"] {
+  transition:
+    transform 120ms ease,
+    filter 120ms ease,
+    background-color 120ms ease,
+    border-color 120ms ease;
+}
+button:not(:disabled):hover {
+  filter: brightness(1.08);
+}
+button:not(:disabled):active {
+  transform: translateY(1px);
+  filter: brightness(0.96);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .stagger > *,
+  .draw-in,
+  .grow-x,
+  .skeleton {
+    animation: none !important;
+  }
+  .skeleton { background: rgba(148, 163, 184, 0.10); }
+  button:not(:disabled):active { transform: none; }
+}
+
+
+
+/* The entrance. Slightly slower and softer than anything inside the app:
+   this is the one screen a visitor looks at before they've decided to care,
+   so it can afford a beat. The card leads and its contents follow, so the
+   call to action is fully readable well before the animation finishes. */
+@keyframes cardIn {
+  from { opacity: 0; transform: translateY(14px) scale(0.985); }
+  to   { opacity: 1; transform: none; }
+}
+
+.entrance {
+  animation: cardIn 620ms cubic-bezier(0.22, 0.61, 0.36, 1) both;
+}
+.entrance > * > * {
+  animation: riseIn 520ms cubic-bezier(0.22, 0.61, 0.36, 1) both;
+}
+.entrance > * > *:nth-child(1) { animation-delay: 110ms; }
+.entrance > * > *:nth-child(2) { animation-delay: 170ms; }
+.entrance > * > *:nth-child(3) { animation-delay: 230ms; }
+
+@media (prefers-reduced-motion: reduce) {
+  .entrance,
+  .entrance > * > * {
+    animation: none !important;
+  }
+}
+
+/* ---- Narrow screens -------------------------------------------------------
+   Everything else in this app is styled inline, which can't express a media
+   query, so the handful of layouts that genuinely need one live here.
+   Measured before writing: at 390px the page scrolled 49px sideways and the
+   nav links physically overlapped, so tapping "Locations" hit "Sessions".
+   That's a broken app on a phone, not a cosmetic problem. */
+
+/* The app bar's content can't fit below ~415px. Rather than shrink the type,
+   the tabs become a horizontally scrollable strip, which is the standard
+   phone pattern and keeps every destination reachable. */
+/* min-width: 0 is the whole trick. Flex and grid children default to
+   min-width: auto, which refuses to shrink below their content — so
+   overflow-x on the nav did nothing until the item was allowed to be
+   narrower than the tabs inside it. */
+.app-bar,
+.tab-nav,
+.stagger {
+  min-width: 0;
+}
+
+@media (max-width: 700px) {
+  .app-bar {
+    gap: 0.75rem !important;
+    align-items: stretch !important;
+  }
+  .tab-nav {
+    order: 3;
+    flex: 1 1 100%;
+    min-width: 0;
+    overflow-x: auto;
+    scrollbar-width: none;
+    gap: 0.25rem !important;
+  }
+  .tab-nav::-webkit-scrollbar { display: none; }
+  .tab-nav a { padding-left: 0.5rem !important; padding-right: 0.5rem !important; }
+}
+
+/* Side-by-side columns stack. minmax(0, …) already let them shrink, but two
+   170px columns is not a layout, it's a compromise nobody wants. */
+@media (max-width: 760px) {
+  .col-2 {
+    grid-template-columns: minmax(0, 1fr) !important;
+    gap: 1.1rem !important;
+  }
+  /* Panels that declared a pixel floor wider than a phone */
+  .flex-cols > * {
+    min-width: 0 !important;
+    flex-basis: 100% !important;
+  }
+}
+
 /* SpaceBackground photo layer: fade in, then a very slow drift/zoom */
 .space-bg-img {
   opacity: 0;

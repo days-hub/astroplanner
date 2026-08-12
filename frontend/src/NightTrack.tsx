@@ -165,7 +165,7 @@ export default function NightTrack({
           </linearGradient>
         </defs>
 
-        <rect x={0} y={0} width={W} height={H} rx={5} fill="url(#nightGrad)" />
+        <rect className="draw-in" x={0} y={0} width={W} height={H} rx={5} fill="url(#nightGrad)" />
 
         {/* Boundaries of full darkness */}
         {[dStart, dEnd].map((px, i) =>
@@ -187,6 +187,8 @@ export default function NightTrack({
         {/* The clear window, same accent and geometry as the cloud chart's */}
         {band && (
           <rect
+            className="grow-x"
+            style={{ transformOrigin: `${band.x}px center` }}
             x={band.x}
             y={H - 5}
             width={band.w}

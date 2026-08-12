@@ -82,7 +82,10 @@ type ShootingStar = {
   maxLife: number;
 };
 
-export default function SpaceBackground({ targetName }: Props) {
+export default function SpaceBackground({
+  targetName,
+  density = 1,
+}: Props & { /** Star count multiplier; the entrance runs richer than the app */ density?: number }) {
   const key = useMemo(() => targetToKey(targetName), [targetName]);
   const theme = THEMES[key] ?? THEMES.global;
 
@@ -93,7 +96,7 @@ export default function SpaceBackground({ targetName }: Props) {
 
   useEffect(() => {
     tintTargetRef.current = hexToRgb(theme.tint);
-  }, [theme.tint]);
+  }, [theme.tint, density]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -122,7 +125,10 @@ export default function SpaceBackground({ targetName }: Props) {
       canvas!.height = Math.round(height * dpr);
       ctx!.setTransform(dpr, 0, 0, dpr, 0, 0);
 
-      const count = Math.min(Math.round((width * height) / 3800), 420);
+      const count = Math.min(
+        Math.round(((width * height) / 3800) * density),
+        Math.round(420 * density),
+      );
       stars = Array.from({ length: count }, () => ({
         x: Math.random() * width,
         y: Math.random() * height,
@@ -238,7 +244,10 @@ export default function SpaceBackground({ targetName }: Props) {
       cancelAnimationFrame(raf);
       window.removeEventListener("resize", resize);
     };
-  }, []);
+    // density is read when the field is generated, so a change has to
+    // rebuild it. It's a constant per mount in practice, but leaving it out
+    // of the deps is the kind of stale-closure bug that only shows up later.
+  }, [density]);
 
   return (
     <div

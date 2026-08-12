@@ -9,6 +9,10 @@ const loginPageStyle: React.CSSProperties = {
   display: "flex",
   alignItems: "center",
   justifyContent: "center",
+  // Dead-centre reads as a dialog floating over a page. Nudging the card
+  // above optical centre makes it the entrance to an application instead,
+  // and matches where the eye naturally lands first.
+  paddingBottom: "8vh",
   background:
     "radial-gradient(circle at 10% 20%, #1e293b 0, #020617 40%, #000 80%)",
   color: "#e5e7eb",
@@ -17,19 +21,22 @@ const loginPageStyle: React.CSSProperties = {
 
 const loginCardStyle: React.CSSProperties = {
   width: "100%",
-  maxWidth: 420,
-  padding: "2.5rem 2.75rem",
+  maxWidth: 440,
+  padding: "2.75rem 3rem",
   borderRadius: 16,
   background: "rgba(15, 23, 42, 0.9)",
-  boxShadow: "0 20px 40px rgba(0,0,0,0.6)",
+  boxShadow: [
+    "inset 0 1px 0 rgba(255,255,255,0.055)",
+    "0 24px 60px rgba(0,0,0,0.55)",
+  ].join(", "),
   border: line.edge,
 };
 
 const titleStyle: React.CSSProperties = {
-  fontSize: "2.25rem",
+  fontSize: "2.6rem",
   fontWeight: 800,
-  letterSpacing: "0.03em",
-  marginBottom: "0.25rem",
+  letterSpacing: "0.01em",
+  marginBottom: "0.35rem",
 };
 
 const subtitleStyle: React.CSSProperties = {
@@ -111,6 +118,12 @@ export default function LoginPage({ onLogin, onGoToRegister }: Props) {
   // Starts false and is revealed once /demo/status says demo mode is off,
   // so the form never flashes in before we know which entry points apply.
   const [showLogin, setShowLogin] = useState(false);
+  // ?signin=1 reveals the credential form on a demo-only deployment. Not a
+  // security boundary — the endpoint is public either way — just a way to
+  // keep a dead end out of every visitor's path without locking the owner out.
+  const signInRequested =
+    typeof window !== "undefined" &&
+    new URLSearchParams(window.location.search).has("signin");
 
   // Ask the server which entry points to show: the demo button when demo
   // mode is on, and the "Create an account" link only where public
@@ -185,8 +198,8 @@ export default function LoginPage({ onLogin, onGoToRegister }: Props) {
 
  return (
   <div style={{ ...loginPageStyle, position: "relative" }}>
-    <SpaceBackground targetName="global" />
-    <div style={{ ...loginCardStyle, position: "relative", zIndex: 1 }}>
+    <SpaceBackground targetName="global" density={1.7} />
+    <div className="entrance" style={{ ...loginCardStyle, position: "relative", zIndex: 1 }}>
       <div style={{ marginBottom: "1.75rem" }}>
         <div
           style={{
@@ -210,7 +223,7 @@ export default function LoginPage({ onLogin, onGoToRegister }: Props) {
         <h1 style={titleStyle}>AstroPlanner</h1>
         <p style={subtitleStyle}>
           {demoStatus?.enabled
-            ? "Explore instantly with a demo account — no signup."
+            ? "Explore instantly with a demo account. No signup needed."
             : "Login with your account to continue."}
         </p>
       </div>
@@ -253,7 +266,12 @@ export default function LoginPage({ onLogin, onGoToRegister }: Props) {
             </p>
           )}
 
-          {!showLogin && (
+          {/* Deliberately absent on a demo deployment. Registration is
+              disabled there, so "Sign in with an existing account" is a dead
+              end for everyone who arrives: a door that opens onto a form they
+              can never fill in. The owner still needs a way in, so the form
+              is one query parameter away (/?signin=1) rather than deleted. */}
+          {!showLogin && signInRequested && (
             <p style={{ textAlign: "center", marginTop: "1.25rem", marginBottom: 0 }}>
               <button
                 type="button"
