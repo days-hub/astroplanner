@@ -1010,7 +1010,7 @@ async function handleDeleteSession(id: number) {
             </select>
               {!hasTime && <div style={metaLineStyle}>Pick a start time to load visible targets.</div>}
               {hasTime && visibleNowCount === 0 && (
-                <div style={metaLineStyle}>No preset targets are visible at that time — choose Custom or change the time.</div>
+                <div style={metaLineStyle}>No preset targets are visible at that time. Choose Custom or change the time.</div>
               )}
               {visibleTargets.some(t => !t.visible) && (
                   <div style={{
@@ -1448,6 +1448,7 @@ async function handleDeleteSession(id: number) {
         )}
       </div>
       <div
+        className="flex-cols"
         style={{
           display: "flex",
           gap: "2rem",
@@ -1459,7 +1460,7 @@ async function handleDeleteSession(id: number) {
         <div
           style={{
             flex: "1.2 1 360px", // grows a bit more than logs
-            minWidth: 360,       // makes it visibly wider
+            minWidth: 0,         // .flex-cols handles the phone case
             ...inset,
             padding: "0.85rem 1rem",
           }}
@@ -1535,7 +1536,7 @@ async function handleDeleteSession(id: number) {
         <div
           style={{
             flex: "1 1 440px",
-            minWidth: 440,
+            minWidth: 0,
             ...inset,
             padding: "0.85rem 1rem",
           }}
@@ -1767,7 +1768,7 @@ async function handleDeleteSession(id: number) {
             side empty, which made the shell read as an afterthought above the
             app. Brand, navigation and account now share a single baseline and
             a single rule. */}
-        <header style={appBarStyle}>
+        <header className="app-bar" style={appBarStyle}>
           <div style={{ minWidth: 0 }}>
             <div style={pillStyle}>Observation Planner</div>
             <h1
@@ -1793,7 +1794,9 @@ async function handleDeleteSession(id: number) {
         {loading && <div>Loading…</div>}
         {error && <div style={{ color: "#fca5a5" }}>{error}</div>}
 
-        <div style={{ animation: "fadeIn 180ms ease" }}>
+        {/* Sections arrive in reading order rather than all at once, so the
+            page assembles itself the way you read it. */}
+        <div className="stagger">
           <Routes>
             <Route path="/planner" element={plannerView} />
             <Route path="/sessions" element={sessionsView} />

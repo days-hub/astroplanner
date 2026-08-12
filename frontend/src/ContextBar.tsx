@@ -75,7 +75,7 @@ export default function ContextBar({
       {/* Two labelled groups rather than one run of controls: location leads,
           and the night carries its timezone so the zone reads as belonging to
           the date rather than floating at the end of the bar. */}
-      <div style={{ display: "grid", gap: "0.15rem", minWidth: 0 }}>
+      <div style={{ display: "grid", gap: "0.15rem", minWidth: 0, flex: "1 1 11rem" }}>
         <span style={labelStyle}>Observing from</span>
         <select
           value={selectedLocationId ?? ""}
@@ -83,7 +83,12 @@ export default function ContextBar({
           aria-label="Observing location"
           style={{
             ...selectField,
-            width: "auto",
+            // width:auto made the control size itself to its longest option
+            // ("Torrance Barrens Dark-Sky Preserve"), which on a phone was
+            // wider than the screen — and because the container was sized by
+            // the select in turn, a percentage max-width couldn't rein it in.
+            // Filling a bounded parent breaks that circularity.
+            width: "100%",
             fontWeight: 700,
             fontSize: "1rem",
             maxWidth: "24rem",
@@ -94,7 +99,7 @@ export default function ContextBar({
             return (
               <option key={loc.id} value={loc.id}>
                 {loc.name}
-                {cloud != null ? ` — ${cloud}% cloud` : ""}
+                {cloud != null ? ` · ${cloud}% cloud` : ""}
               </option>
             );
           })}

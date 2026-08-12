@@ -164,8 +164,8 @@ export default function AddLocationDrawer({
             )}
             {!searching && query.trim().length >= 2 && matches.length === 0 && (
               <div style={{ fontSize: fontSize.small, color: text.muted }}>
-                No matches. Search by place name alone — the lookup doesn't
-                recognise a trailing country or province.
+                No matches. Try the place name on its own, without a
+                country or province.
               </div>
             )}
             {matches.length > 0 && (
@@ -180,7 +180,7 @@ export default function AddLocationDrawer({
                 {/* Say so when we answered a narrower question than the one
                     asked, rather than passing the results off as exact. */}
                 {matches[0].matched_query
-                  ? `No exact match — showing results for “${matches[0].matched_query}”`
+                  ? `No exact match. Showing results for “${matches[0].matched_query}”`
                   : "Suggested matches"}
               </div>
             )}

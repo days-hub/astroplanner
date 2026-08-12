@@ -46,7 +46,7 @@ function linkStyle(active: boolean): React.CSSProperties {
 
 export default function TabNav() {
   return (
-    <nav style={navStyle} aria-label="Main">
+    <nav className="tab-nav" style={navStyle} aria-label="Main">
       {TABS.map((t) => (
         <NavLink
           key={t.to}

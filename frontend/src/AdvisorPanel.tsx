@@ -172,7 +172,7 @@ export default function AdvisorPanel({
       });
       setResult(res.data);
     } catch (err) {
-      setError(apiErrorMessage(err, "The advisor couldn't answer — try again."));
+      setError(apiErrorMessage(err, "The advisor couldn't answer. Try again."));
     } finally {
       setAsking(false);
     }
@@ -198,7 +198,7 @@ export default function AdvisorPanel({
             }}
           >
             Answers use the selected location and night, the computed sky
-            conditions, and the weather forecast — nothing else.
+            conditions, and the weather forecast. Nothing else.
           </div>
         </div>
       )}
