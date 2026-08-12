@@ -38,6 +38,8 @@ type Forecast = {
   location_id: number;
   conditions?: Verdict | null;
   cloud_cover_percent?: number | null;
+  dark_start_local?: string | null;
+  dark_end_local?: string | null;
   clear_from_local?: string | null;
   clear_to_local?: string | null;
   clear_hours: number;
@@ -148,6 +150,93 @@ const sortButtonOn: React.CSSProperties = {
 
 // Outline reserved for the site you're planning from; everything else is
 // contained by tint and spacing alone.
+
+/** "HH:MM" as minutes past noon, so an evening and the small hours of the
+ *  following morning sort in the order they actually happen. */
+function nightMinutes(hhmm: string): number {
+  const [h, m] = hhmm.split(":").map(Number);
+  const mins = h * 60 + m;
+  return h < 12 ? mins + 24 * 60 : mins;
+}
+
+/** One site's night, drawn on an axis shared by every row.
+ *
+ * This is the thing a list of saved sites should be able to answer and
+ * couldn't: not just "how cloudy is each one", but *when* each one is usable.
+ * Reading four pairs of timestamps to work out that one site clears early and
+ * another clears at 3am is exactly the arithmetic a picture removes. Because
+ * every row is drawn against the same start and end, the bars line up and the
+ * comparison is a vertical scan.
+ */
+function NightBar({
+  forecast,
+  axisStart,
+  axisEnd,
+}: {
+  forecast?: Forecast;
+  axisStart: number;
+  axisEnd: number;
+}) {
+  const span = axisEnd - axisStart;
+  if (!forecast?.dark_start_local || !forecast.dark_end_local || span <= 0) {
+    return null;
+  }
+
+  const pct = (mins: number) =>
+    Math.max(0, Math.min(100, ((mins - axisStart) / span) * 100));
+
+  const darkFrom = pct(nightMinutes(forecast.dark_start_local));
+  const darkTo = pct(nightMinutes(forecast.dark_end_local));
+
+  let clear: { from: number; to: number } | null = null;
+  if (forecast.clear_from_local && forecast.clear_to_local) {
+    const a = pct(nightMinutes(forecast.clear_from_local));
+    const b = pct(nightMinutes(forecast.clear_to_local));
+    if (b > a) clear = { from: a, to: b };
+  }
+
+  return (
+    <div
+      aria-hidden
+      title={
+        `Dark ${forecast.dark_start_local} to ${forecast.dark_end_local}` +
+        (forecast.clear_from_local
+          ? `, clear ${forecast.clear_from_local} to ${forecast.clear_to_local}`
+          : ", no clear window")
+      }
+      style={{ position: "relative", height: 4, marginTop: "0.4rem" }}
+    >
+      {/* The dark window this site actually gets */}
+      <div
+        style={{
+          position: "absolute",
+          left: `${darkFrom}%`,
+          width: `${Math.max(0, darkTo - darkFrom)}%`,
+          top: 0,
+          height: 4,
+          borderRadius: 2,
+          background: "rgba(148,163,184,0.20)",
+        }}
+      />
+      {/* The part of it that is forecast usable */}
+      {clear && (
+        <div
+          className="grow-x"
+          style={{
+            position: "absolute",
+            left: `${clear.from}%`,
+            width: `${Math.max(1.5, clear.to - clear.from)}%`,
+            top: 0,
+            height: 4,
+            borderRadius: 2,
+            background: "#60a5fa",
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
 const rowStyle = (current: boolean): React.CSSProperties => ({
   borderRadius: 14,
   border: current ? line.focus : "1px solid transparent",
@@ -224,6 +313,17 @@ export default function LocationsPage({
       setSaving(false);
     }
   }
+
+  // One axis for every row, spanning the earliest darkness to the latest.
+  // Per-row axes would each be full-width and the bars would tell you nothing
+  // by comparison, which is the only reason to draw them.
+  const bounds = Object.values(forecasts).flatMap((f) =>
+    f.dark_start_local && f.dark_end_local
+      ? [nightMinutes(f.dark_start_local), nightMinutes(f.dark_end_local)]
+      : [],
+  );
+  const axisStart = bounds.length ? Math.min(...bounds) : 0;
+  const axisEnd = bounds.length ? Math.max(...bounds) : 0;
 
   return (
     <section style={card}>
@@ -405,6 +505,10 @@ export default function LocationsPage({
                           ? `next: ${f.next_clear_weekday} ${to12h(f.next_clear_from_local)}`
                           : "no clear night this week"
                         : ""}
+                  </div>
+
+                  <div style={{ gridColumn: "1 / -1" }}>
+                    <NightBar forecast={f} axisStart={axisStart} axisEnd={axisEnd} />
                   </div>
                 </div>
               </button>
