@@ -443,7 +443,7 @@ export default function LocationsPage({
                     {isCurrent && (
                       <span
                         style={{
-                          fontSize: "0.66rem",
+                          fontSize: fontSize.small,
                           fontWeight: 700,
                           letterSpacing: "0.06em",
                           textTransform: "uppercase",

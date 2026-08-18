@@ -7,11 +7,13 @@ class SessionBase(BaseModel):
     scheduled_start: datetime
     location_id: int
     status: Optional[str] = "planned"
+    preparation_notes: Optional[str] = None
 
 class SessionCreate(BaseModel):
     target_name: str
     location_id: int
     status: Optional[str] = "planned"
+    preparation_notes: Optional[str] = None
 
     # accept either
     scheduled_start: Optional[datetime] = None
@@ -22,6 +24,7 @@ class SessionUpdate(BaseModel):
     target_name: Optional[str] = None
     location_id: Optional[int] = None
     status: Optional[str] = None
+    preparation_notes: Optional[str] = None
 
     # accept either
     scheduled_start: Optional[datetime] = None

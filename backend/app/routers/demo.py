@@ -120,6 +120,7 @@ def _seed_demo_data(db: Session, user: User) -> None:
         scheduled_start=_evening_utc(2),
         owner=user,
         location=toronto,
+        preparation_notes="Cool the telescope for 30 minutes. Pack the 9 mm eyepiece and blue filter.",
     )
     m57 = ObservationSession(
         target_name="Ring Nebula (M57)",
@@ -127,6 +128,7 @@ def _seed_demo_data(db: Session, user: User) -> None:
         scheduled_start=_evening_utc(5, hour=23, minute=0),
         owner=user,
         location=barrens,
+        preparation_notes="Bring the O-III filter, dew heaters, and a red flashlight.",
     )
     albireo = ObservationSession(
         target_name="Albireo",
@@ -185,6 +187,8 @@ def _seed_demo_data(db: Session, user: User) -> None:
                 seeing="good",
                 transparency="fair",
                 rating=5,
+                equipment="Celestron 8SE · 10 mm eyepiece",
+                exposure="Visual · 203×",
             ),
             ObservationLog(
                 session=m31,
@@ -195,6 +199,8 @@ def _seed_demo_data(db: Session, user: User) -> None:
                 seeing="fair",
                 transparency="good",
                 rating=4,
+                equipment="Celestron 8SE · 25 mm eyepiece",
+                exposure="Visual · 49×",
             ),
             ObservationLog(
                 session=m13,
@@ -205,6 +211,8 @@ def _seed_demo_data(db: Session, user: User) -> None:
                 seeing="excellent",
                 transparency="excellent",
                 rating=5,
+                equipment="10-inch Dobsonian · 8 mm eyepiece",
+                exposure="Visual · 150×",
             ),
             ObservationLog(
                 session=m8,
@@ -215,6 +223,8 @@ def _seed_demo_data(db: Session, user: User) -> None:
                 seeing="fair",
                 transparency="fair",
                 rating=3,
+                equipment="80 mm refractor · O-III filter",
+                exposure="Visual · 32×",
             ),
         ]
     )

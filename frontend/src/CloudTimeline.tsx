@@ -63,6 +63,48 @@ export default function CloudTimeline({
 }: Props) {
   if (points.length === 0) return null;
 
+  const calculatedMean = Math.round(
+    points.reduce((sum, point) => sum + point.cloud_cover, 0) / points.length,
+  );
+  const average = meanPercent ?? calculatedMean;
+  const isClearAllNight = points.every(
+    (point) => Math.round(point.cloud_cover) === 0,
+  );
+
+  // A flat 0% plot is five or six copies of the same answer. Keep the
+  // conclusion, but remove the chart furniture until the forecast contains
+  // variation worth locating in time.
+  if (isClearAllNight) {
+    return (
+      <div
+        role="img"
+        aria-label={`Clear all night. ${average}% average cloud cover.`}
+        style={{
+          display: "inline-flex",
+          alignItems: "center",
+          gap: "0.65rem",
+          padding: "0.1rem 0",
+        }}
+      >
+        <span
+          aria-hidden
+          style={{
+            width: 9,
+            height: 9,
+            flexShrink: 0,
+            borderRadius: 9999,
+            background: "#6ee7b7",
+            boxShadow: "0 0 14px rgba(110,231,183,0.35)",
+          }}
+        />
+        <div style={{ fontSize: fontSize.body, color: text.primary }}>
+          <strong>Clear all night</strong>
+          <span style={{ color: text.muted }}> · {average}% average</span>
+        </div>
+      </div>
+    );
+  }
+
   const n = points.length;
   const slot = W / n;
   const y = (pct: number) => H - (Math.max(0, Math.min(100, pct)) / 100) * H;

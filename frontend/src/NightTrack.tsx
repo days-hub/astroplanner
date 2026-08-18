@@ -17,6 +17,7 @@
 // backend actually computed.
 import { MoonIcon } from "./icons";
 import { fontSize, text } from "./theme";
+import type { CloudPoint } from "./CloudTimeline";
 
 interface Props {
   /** UTC ISO instants from the night payload */
@@ -31,11 +32,14 @@ interface Props {
   moonIllumination: number;
   /** Fraction of the dark window the Moon is above the horizon, 0..1 */
   moonUpFraction?: number | null;
+  /** Hourly local forecast points, overlaid on the same sunset-to-sunrise axis. */
+  cloudPoints?: CloudPoint[];
+  meanCloudPercent?: number | null;
   tz: string;
 }
 
 const W = 600;
-const H = 26;
+const H = 38;
 
 const DUSK = "#334155";      // twilight: sky still washed out
 const DARK = "#0b1220";      // full astronomical darkness
@@ -69,6 +73,8 @@ export default function NightTrack({
   moonsetLocal,
   moonIllumination,
   moonUpFraction,
+  cloudPoints = [],
+  meanCloudPercent,
   tz,
 }: Props) {
   // The track spans sunset → sunrise. Without both ends there's no scale to
@@ -103,6 +109,14 @@ export default function NightTrack({
     if (b > a) band = { x: a, w: b - a };
   }
   const moonX = moonsetLocal ? localToX(moonsetLocal) : null;
+  const visibleCloud = cloudPoints.filter(
+    (point) => Math.round(point.cloud_cover) > 0,
+  );
+
+  const addHour = (hhmmValue: string) => {
+    const [h, m] = hhmmValue.split(":").map(Number);
+    return `${String((h + 1) % 24).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+  };
 
   const label = (v: string | null) => v ?? "—";
 
@@ -184,6 +198,28 @@ export default function NightTrack({
           ),
         )}
 
+        {/* Cloud shares the night axis instead of living in a disconnected
+            second chart. Each forecast holds for one hour; opacity carries
+            magnitude so the twilight/darkness layer remains visible below. */}
+        {visibleCloud.map((point) => {
+          const x1 = localToX(point.time_local);
+          const x2 = localToX(addHour(point.time_local));
+          if (x2 <= x1) return null;
+          return (
+            <rect
+              key={`cloud-${point.time_local}`}
+              x={x1}
+              y={0}
+              width={x2 - x1}
+              height={H - 6}
+              fill="#cbd5e1"
+              opacity={0.08 + (Math.min(100, point.cloud_cover) / 100) * 0.42}
+            >
+              <title>{`${point.time_local} · ${point.cloud_cover}% cloud`}</title>
+            </rect>
+          );
+        })}
+
         {/* The clear window, same accent and geometry as the cloud chart's */}
         {band && (
           <rect
@@ -213,22 +249,37 @@ export default function NightTrack({
         )}
       </svg>
 
-      {band && (
+      {(band || visibleCloud.length > 0) && (
         <div
           style={{
             display: "flex",
             alignItems: "center",
-            gap: "0.35rem",
+            gap: "0.8rem",
+            flexWrap: "wrap",
             fontSize: fontSize.micro,
             color: text.muted,
             marginTop: "0.35rem",
           }}
         >
-          <span
-            aria-hidden
-            style={{ width: 14, height: 3, borderRadius: 2, background: ACCENT }}
-          />
-          clear window
+          {band && (
+            <span style={{ display: "inline-flex", alignItems: "center", gap: "0.35rem" }}>
+              <span
+                aria-hidden
+                style={{ width: 14, height: 3, borderRadius: 2, background: ACCENT }}
+              />
+              clear window
+            </span>
+          )}
+          {visibleCloud.length > 0 && (
+            <span style={{ display: "inline-flex", alignItems: "center", gap: "0.35rem" }}>
+              <span
+                aria-hidden
+                style={{ width: 12, height: 8, borderRadius: 2, background: "rgba(203,213,225,0.38)" }}
+              />
+              cloud cover
+              {meanCloudPercent != null ? ` · ${meanCloudPercent}% average` : ""}
+            </span>
+          )}
         </div>
       )}
 

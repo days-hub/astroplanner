@@ -15,6 +15,14 @@ from app.schemas.session import (
 )
 
 router = APIRouter(prefix="/sessions", tags=["sessions"])
+SESSION_STATUSES = {"planned", "completed", "cancelled"}
+
+
+def validate_status(value: str | None) -> None:
+    if value is not None and value not in SESSION_STATUSES:
+        raise HTTPException(status_code=422, detail="Invalid session status")
+
+
 def to_utc_aware(dt):
     if dt is None:
         return None
@@ -30,6 +38,7 @@ def as_read_model(s: ObservationSession) -> SessionRead:
         scheduled_start=to_utc_aware(s.scheduled_start),
         location_id=s.location_id,
         status=s.status,
+        preparation_notes=s.preparation_notes,
     )
 
 def _get_user_session(db: Session, session_id: int, user_id: int) -> ObservationSession | None:
@@ -76,6 +85,8 @@ def create_session(
     if not location:
         raise HTTPException(status_code=404, detail="Location not found")
 
+    validate_status(session_in.status)
+
     # Prefer location timezone, fall back to incoming tz
     tz_name = location.timezone or session_in.tz
 
@@ -99,6 +110,7 @@ def create_session(
         status=session_in.status or "planned",
         owner_id=current_user.id,
         location_id=session_in.location_id,
+        preparation_notes=session_in.preparation_notes,
     )
 
     db.add(session)
@@ -148,6 +160,7 @@ def update_session(
         raise HTTPException(status_code=404, detail="Session not found")
 
     data = session_in.model_dump(exclude_unset=True)
+    validate_status(data.get("status"))
 
     # If changing location, ensure it belongs to user
     location: Location | None = None

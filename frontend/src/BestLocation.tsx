@@ -4,7 +4,7 @@
 // make the user press a button to find out. This evaluates them whenever the
 // night or the selected site changes and states the answer; the full table
 // stays available behind a disclosure for people who want the detail.
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import api from "./api";
 import { btnSecondarySm, card, fontSize, text, verdictStyles } from "./theme";
 
@@ -67,7 +67,7 @@ const cellStyle: React.CSSProperties = {
 
 const headStyle: React.CSSProperties = {
   padding: "0 0.6rem 0.35rem",
-  fontSize: "0.7rem",
+  fontSize: fontSize.small,
   textTransform: "uppercase",
   letterSpacing: "0.07em",
   color: text.muted,
@@ -87,6 +87,15 @@ export default function BestLocation({
   const [loading, setLoading] = useState(false);
   const [showAll, setShowAll] = useState(false);
 
+  // The callback is held in a ref so the fetch below doesn't depend on its
+  // identity. Today's only caller passes a state setter, which is stable, but
+  // the prop accepts any function: an inline arrow would otherwise refetch
+  // the whole comparison on every render of the parent.
+  const onResultsRef = useRef(onResults);
+  useEffect(() => {
+    onResultsRef.current = onResults;
+  });
+
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -102,7 +111,7 @@ export default function BestLocation({
         if (cancelled) return;
         setRows(res.data.locations);
         setRec(res.data.recommendation ?? null);
-        onResults?.(res.data.locations);
+        onResultsRef.current?.(res.data.locations);
       } catch {
         if (!cancelled) {
           setRows(null);
@@ -115,7 +124,6 @@ export default function BestLocation({
     return () => {
       cancelled = true;
     };
-    // onResults is intentionally excluded — it's a callback identity, not data
   }, [dateStr, tz, selectedLocationId]);
 
   if (loading && !rows) {
@@ -164,7 +172,7 @@ export default function BestLocation({
         }}
       >
         <div style={{ minWidth: 0 }}>
-          <div style={{ fontSize: "0.7rem", textTransform: "uppercase", letterSpacing: "0.07em", color: text.muted }}>
+          <div style={{ fontSize: fontSize.small, textTransform: "uppercase", letterSpacing: "0.07em", color: text.muted }}>
             {rec?.status === "switch" ? "Consider moving" : "Saved locations"}
           </div>
           <div
@@ -262,7 +270,7 @@ export default function BestLocation({
               </tbody>
             </table>
           </div>
-          <div style={{ fontSize: "0.72rem", color: text.muted, marginTop: "0.6rem" }}>
+          <div style={{ fontSize: fontSize.small, color: text.muted, marginTop: "0.6rem" }}>
             Distances are straight-line from your current location, not driving
             distance.
           </div>

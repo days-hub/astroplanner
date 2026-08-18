@@ -228,6 +228,398 @@ button:not(:disabled):active {
   min-width: 0;
 }
 
+/* The app bar remains available on every route. The Planner's context bar
+   then docks beneath it on screens tall/wide enough to afford two persistent
+   layers. Its own surface stays mostly opaque for legibility; the blur keeps
+   content scrolling underneath from showing through as hard shapes. */
+@media (min-width: 761px) {
+  .context-bar {
+    position: sticky;
+    top: 4.7rem;
+    z-index: 20;
+    backdrop-filter: blur(16px) saturate(125%);
+    -webkit-backdrop-filter: blur(16px) saturate(125%);
+    box-shadow: 0 14px 32px rgba(0, 0, 0, 0.28);
+  }
+}
+
+/* Sessions is a master/detail workspace on desktop. The list owns its scroll
+   region, so selecting item 20 never pushes the matching details below item
+   20. The route remains /sessions/:id, which also lets the same markup become
+   a list-or-detail flow on smaller screens. */
+.session-workspace {
+  display: grid;
+  grid-template-columns: minmax(20rem, 0.78fr) minmax(0, 1.45fr);
+  gap: 1.1rem;
+  align-items: start;
+  min-width: 0;
+}
+
+.session-master,
+.session-detail {
+  min-width: 0;
+}
+
+.session-master {
+  position: sticky;
+  top: 4.7rem;
+  display: flex;
+  flex-direction: column;
+  max-height: calc(100vh - 5.7rem);
+}
+
+.session-list-scroll {
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+}
+
+.session-row + .session-row {
+  margin-top: 0.22rem;
+}
+
+.session-row-button {
+  width: 100%;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.62rem 0.68rem;
+  border: 1px solid transparent;
+  border-radius: 11px;
+  background: transparent;
+  color: #e8edf5;
+  text-align: left;
+  cursor: pointer;
+  transition: background 120ms ease, border-color 120ms ease;
+}
+
+.session-row-button:hover {
+  background: rgba(30, 41, 59, 0.55);
+}
+
+.session-row-button[aria-current="true"] {
+  border-color: rgba(147, 197, 253, 0.52);
+  background: rgba(59, 130, 246, 0.17);
+}
+
+.session-row-copy {
+  min-width: 0;
+  display: grid;
+  gap: 0.18rem;
+}
+
+.session-row-copy strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.session-row-copy > span {
+  color: #b8c4d4;
+  font-size: 0.875rem;
+  line-height: 1.35;
+}
+
+.session-search {
+  display: block;
+  margin-bottom: 0.85rem;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.session-detail-header {
+  position: relative;
+  padding-right: 25rem;
+  min-height: 4.25rem;
+}
+
+.session-detail-actions {
+  position: absolute;
+  top: 0;
+  right: 0;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.45rem;
+  flex-wrap: wrap;
+}
+
+.session-edit-panel {
+  display: grid;
+  gap: 0.75rem;
+  padding: 0.85rem 1rem;
+  margin-bottom: 1rem;
+}
+
+.session-edit-panel label,
+.session-log-meta-fields label {
+  display: grid;
+  gap: 0.25rem;
+  color: #b8c4d4;
+  font-size: 0.875rem;
+}
+
+.session-edit-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(12rem, 0.9fr) minmax(8rem, 0.55fr);
+  gap: 0.65rem;
+}
+
+.session-plan-facts {
+  margin-top: 1rem;
+  padding-top: 0.9rem;
+  border-top: 1px solid rgba(148, 163, 184, 0.16);
+}
+
+.session-detail-planned {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.session-detail-planned .session-weather-panel > .session-plan-facts {
+  display: none;
+}
+
+.session-detail-planned .session-logs-panel {
+  grid-column: 1 / -1;
+}
+
+.session-plan-panel {
+  min-width: 0;
+}
+
+.session-plan-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.55rem;
+  margin-top: 0.75rem;
+}
+
+.session-plan-fact {
+  min-width: 0;
+  display: grid;
+  align-content: start;
+  gap: 0.2rem;
+  padding: 0.7rem 0.75rem;
+  border-radius: 10px;
+  background: rgba(2, 6, 23, 0.38);
+}
+
+.session-plan-fact > span {
+  color: #8fa0b5;
+  font-size: 0.875rem;
+}
+
+.session-plan-fact > strong {
+  color: #e8edf5;
+  font-size: 1rem;
+  line-height: 1.35;
+}
+
+.session-plan-fact > small {
+  color: #b8c4d4;
+  font-size: 0.8rem;
+  line-height: 1.35;
+}
+
+.session-plan-window {
+  grid-column: 1 / -1;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: baseline;
+}
+
+.session-forecast-stats > div {
+  display: grid !important;
+  align-content: start;
+  justify-content: stretch !important;
+  gap: 0.2rem !important;
+}
+
+.session-forecast-stats > div > span:last-child {
+  white-space: nowrap;
+}
+
+.session-plan-facts h4 {
+  margin: 0 0 0.4rem;
+  font-size: 0.95rem;
+}
+
+.session-prep-notes {
+  margin-top: 0.65rem;
+  padding: 0.65rem;
+  border-radius: 10px;
+  background: rgba(2, 6, 23, 0.38);
+}
+
+.session-prep-notes p {
+  margin: 0.2rem 0 0;
+  color: #d6deea;
+  line-height: 1.45;
+}
+
+.session-log-meta-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.6rem;
+  margin-top: 0.6rem;
+}
+
+.session-detail-columns {
+  display: grid;
+  grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
+  gap: 1rem;
+}
+
+.session-detail-empty {
+  display: grid;
+  min-height: 22rem;
+  place-items: center;
+}
+
+.session-mobile-back {
+  display: none;
+}
+
+.session-delete-action:focus-visible {
+  opacity: 1 !important;
+  pointer-events: auto !important;
+}
+
+@media (max-width: 1100px) and (min-width: 901px) {
+  .session-detail-columns {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .session-detail-planned .session-logs-panel {
+    grid-column: auto;
+  }
+  .session-detail-header {
+    padding-right: 0;
+  }
+  .session-detail-actions {
+    position: static;
+    justify-content: flex-start;
+    margin-bottom: 0.8rem;
+  }
+  .session-edit-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 900px) {
+  .session-workspace {
+    display: block;
+  }
+  .session-master {
+    position: static;
+    max-height: none;
+  }
+  .session-list-scroll {
+    overflow: visible;
+  }
+  .session-workspace.has-selection .session-master,
+  .session-workspace:not(.has-selection) .session-detail {
+    display: none;
+  }
+  .session-detail-columns {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .session-detail-planned .session-logs-panel {
+    grid-column: auto;
+  }
+  .session-mobile-back {
+    display: inline-flex;
+  }
+  .session-detail-header {
+    padding-right: 0;
+  }
+  .session-detail-actions {
+    position: static;
+    justify-content: flex-start;
+    margin-bottom: 0.8rem;
+  }
+  .session-edit-grid,
+  .session-log-meta-fields {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 520px) {
+  .session-plan-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .session-plan-window {
+    grid-column: auto;
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (hover: none) {
+  .session-delete-action {
+    opacity: 0.75 !important;
+    pointer-events: auto !important;
+  }
+}
+
+/* The target area is recommendation-first: four roomy choices, followed by
+   an optional compact catalogue. This avoids turning every extra catalogue
+   entry into another equally loud action card. */
+.target-feature-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.65rem;
+}
+
+.target-feature-card {
+  min-width: 0;
+}
+
+.target-browser-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.45rem;
+}
+
+.target-browser-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.6rem;
+  min-width: 0;
+  padding: 0.55rem 0.65rem;
+  border: 1px solid rgba(71, 85, 105, 0.22);
+  border-radius: 11px;
+  background: rgba(2, 6, 23, 0.4);
+}
+
+@media (max-width: 980px) {
+  .target-feature-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 700px) {
+  .target-browser-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 480px) {
+  .target-feature-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
 @media (max-width: 700px) {
   .app-bar {
     gap: 0.75rem !important;
@@ -262,6 +654,7 @@ button:not(:disabled):active {
 /* SpaceBackground photo layer: fade in, then a very slow drift/zoom */
 .space-bg-img {
   opacity: 0;
+  filter: saturate(0.72) contrast(0.92) brightness(0.88);
   animation:
     space-bg-fade-in 1.8s ease-out forwards,
     space-bg-drift 90s ease-in-out 1.8s infinite;
@@ -272,7 +665,7 @@ button:not(:disabled):active {
     opacity: 0;
   }
   to {
-    opacity: 0.55;
+    opacity: 0.4;
   }
 }
 
@@ -291,7 +684,7 @@ button:not(:disabled):active {
 @media (prefers-reduced-motion: reduce) {
   .space-bg-img {
     animation: none;
-    opacity: 0.55;
+    opacity: 0.4;
   }
 }
 

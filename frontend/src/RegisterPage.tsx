@@ -2,7 +2,7 @@ import type { FormEvent } from "react";
 import { useState } from "react";
 import api, { apiErrorMessage, setAuthToken } from "./api";
 import { SparklesIcon } from "./icons";
-import { btnPrimary, btnSecondary, line } from "./theme";
+import { btnPrimary, btnSecondary, fontSize, line } from "./theme";
 
 const registerPageStyle: React.CSSProperties = {
   minHeight: "100vh",
@@ -42,7 +42,7 @@ const subtitleStyle: React.CSSProperties = {
 
 const labelStyle: React.CSSProperties = {
   display: "block",
-  fontSize: "0.85rem",
+  fontSize: fontSize.small,
   fontWeight: 500,
   marginBottom: "0.25rem",
 };
@@ -144,7 +144,7 @@ export default function RegisterPage({ onRegisteredAndLoggedIn, onGoToLogin }: P
               borderRadius: 9999,
               background: "rgba(34,197,94,0.15)",
               color: "#86efac",
-              fontSize: "0.7rem",
+              fontSize: fontSize.small,
               textTransform: "uppercase",
               letterSpacing: "0.12em",
               marginBottom: "0.75rem",
@@ -196,7 +196,7 @@ export default function RegisterPage({ onRegisteredAndLoggedIn, onGoToLogin }: P
           </div>
 
           {error && (
-            <div style={{ color: "#fca5a5", fontSize: "0.85rem", marginTop: "0.6rem" }}>
+            <div style={{ color: "#fca5a5", fontSize: fontSize.small, marginTop: "0.6rem" }}>
               {error}
             </div>
           )}

@@ -14,8 +14,9 @@ export const text = {
   muted: "#8fa0b5",
 } as const;
 
-// Body sits at 0.9rem rather than the browser default: the app is dense and
-// dark, but anything below ~0.85rem starts costing legibility.
+// The interface is information-dense, but it should not become miniature on
+// a wide display. Normal copy is 15px and supporting text is 14px; `micro` is
+// reserved for chart ticks, legends, and provenance rather than UI labels.
 //
 // `lead` exists because the Planner had four adjacent levels within a few
 // tenths of a rem of each other, and the single most important line — the
@@ -24,12 +25,12 @@ export const text = {
 // supporting text has been pushed down rather than the headline pushed up.
 export const fontSize = {
   hero: "2.05rem",   // the login wordmark, nowhere else
-  lead: "1.45rem",   // the one conclusion the eye should land on
-  title: "1.2rem",   // the strongest supporting figure (the observing window)
-  section: "1.05rem",
-  body: "0.9rem",
-  small: "0.82rem",
-  micro: "0.72rem",  // axis labels, legends, provenance
+  lead: "1.5rem",    // the one conclusion the eye should land on
+  title: "1.25rem",  // the strongest supporting figure (the observing window)
+  section: "1.125rem",
+  body: "0.9375rem",
+  small: "0.875rem",
+  micro: "0.75rem",  // axis labels, legends, provenance only
 } as const;
 
 // ---- What each colour means -----------------------------------------------

@@ -171,7 +171,7 @@ export default function AddLocationDrawer({
             {matches.length > 0 && (
               <div
                 style={{
-                  fontSize: "0.7rem",
+                  fontSize: fontSize.small,
                   textTransform: "uppercase",
                   letterSpacing: "0.07em",
                   color: text.muted,

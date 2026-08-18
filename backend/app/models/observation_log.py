@@ -14,6 +14,9 @@ class ObservationLog(Base):
     transparency = Column(String, nullable=True)  # similar scale
     rating = Column(Integer, nullable=True)       # 1–5, etc.
 
+    equipment = Column(Text, nullable=True)
+    exposure = Column(Text, nullable=True)
+
     session_id = Column(Integer, ForeignKey("sessions.id", ondelete="CASCADE"), nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 

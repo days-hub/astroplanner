@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, func
+from sqlalchemy import Column, Integer, String, Text, DateTime, ForeignKey, func
 from sqlalchemy.orm import relationship
 
 from app.db.database import Base
@@ -13,6 +13,7 @@ class ObservationSession(Base):
     status = Column(String, nullable=False, default="planned")  # planned / completed / cancelled
 
     scheduled_start = Column(DateTime(timezone=True), nullable=False)
+    preparation_notes = Column(Text, nullable=True)
 
     owner_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     location_id = Column(Integer, ForeignKey("locations.id", ondelete="CASCADE"), nullable=False)

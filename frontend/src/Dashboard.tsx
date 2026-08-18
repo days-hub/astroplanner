@@ -1,6 +1,6 @@
 import type React from "react";
 import type { FormEvent } from "react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { isAxiosError } from "axios";
 import {
   Navigate,
@@ -12,12 +12,10 @@ import {
 } from "react-router-dom";
 import api from "./api";
 import TabNav from "./TabNav";
-import { TrashIcon } from "./icons";
 import Drawer from "./Drawer";
 import AddLocationDrawer, { type NewLocation } from "./AddLocationDrawer";
 import { SegmentedControl, StarRating } from "./controls";
 import {
-  btnDangerIcon as iconDangerButtonSm,
   btnPrimary,
   btnPrimarySm,
   btnSecondarySm,
@@ -64,6 +62,7 @@ interface Session {
   scheduled_start: string;
   location_id: number;
   status: string;
+  preparation_notes?: string | null;
 }
 interface ObservationLog {
   id: number;
@@ -71,6 +70,8 @@ interface ObservationLog {
   seeing?: string | null;
   transparency?: string | null;
   rating?: number | null;
+  equipment?: string | null;
+  exposure?: string | null;
 }
 
 interface WeatherInfo {
@@ -103,7 +104,7 @@ const appShellStyle: React.CSSProperties = {
 };
 
 const appInnerStyle: React.CSSProperties = {
-  maxWidth: 1100,
+  maxWidth: 1240,
   margin: "0 auto",
   padding: "1.75rem 1.5rem 3rem",
   display: "grid",
@@ -114,19 +115,30 @@ const appBarStyle: React.CSSProperties = {
   alignItems: "flex-end",
   gap: "2.25rem",
   flexWrap: "wrap",
-  paddingBottom: 0,
+  position: "sticky",
+  top: 0,
+  zIndex: 30,
+  padding: "0.55rem 0.75rem 0",
+  marginLeft: "-0.75rem",
+  marginRight: "-0.75rem",
   marginBottom: "0.4rem",
+  borderRadius: "0 0 14px 14px",
   borderBottom: "1px solid rgba(148,163,184,0.22)",
+  background:
+    "linear-gradient(180deg, rgba(7,12,25,0.94), rgba(7,12,25,0.82))",
+  backdropFilter: "blur(18px) saturate(130%)",
+  WebkitBackdropFilter: "blur(18px) saturate(130%)",
+  boxShadow: "0 12px 30px rgba(0,0,0,0.22)",
 };
 
 const pillStyle: React.CSSProperties = {
-  fontSize: "0.75rem",
+  fontSize: fontSize.small,
   textTransform: "uppercase",
   letterSpacing: "0.16em",
   color: "#a855f7",
 };
 const statusPillBase: React.CSSProperties = {
-  fontSize: "0.72rem",
+  fontSize: fontSize.small,
   fontWeight: 700,
   textTransform: "uppercase",
   letterSpacing: "0.08em",
@@ -139,7 +151,7 @@ const statusPillBase: React.CSSProperties = {
 };
 
 const weatherSubtitleStyle: React.CSSProperties = {
-  fontSize: "0.78rem",
+  fontSize: fontSize.small,
   color: "#9ca3af",
   marginTop: "0.15rem",
 };
@@ -160,12 +172,12 @@ const statChipStyle: React.CSSProperties = {
   gap: "0.75rem",
 };
 const statLabelStyle: React.CSSProperties = {
-  fontSize: "0.78rem",
+  fontSize: fontSize.small,
   color: "#9ca3af",
 };
 
 const statValueStyle: React.CSSProperties = {
-  fontSize: "0.85rem",
+  fontSize: fontSize.body,
   color: "#e5e7eb",
   fontWeight: 600,
 };
@@ -181,15 +193,57 @@ type VisibleTarget = {
   reason?: string | null;
   score: number;
 };
+type ObservingContext = {
+  date_local: string;
+  phase: "active" | "upcoming";
+  now_local: string;
+  rollover_local?: string | null;
+};
 const PRESET_TARGETS = [
+  "Mercury",
   "Saturn",
   "Jupiter",
   "Mars",
   "Venus",
+  "Uranus",
+  "Neptune",
   "Moon",
   "Orion Nebula (M42)",
   "Andromeda Galaxy (M31)",
   "Pleiades (M45)",
+  "Triangulum Galaxy (M33)",
+  "Double Cluster (NGC 869/884)",
+  "Crab Nebula (M1)",
+  "M35 Open Cluster",
+  "Beehive Cluster (M44)",
+  "Bode's Galaxy (M81)",
+  "Cigar Galaxy (M82)",
+  "Owl Nebula (M97)",
+  "Messier 106 Galaxy",
+  "Sombrero Galaxy (M104)",
+  "Black Eye Galaxy (M64)",
+  "Sunflower Galaxy (M63)",
+  "Whirlpool Galaxy (M51)",
+  "Messier 3 Cluster",
+  "Pinwheel Galaxy (M101)",
+  "Messier 5 Cluster",
+  "Hercules Cluster (M13)",
+  "Messier 12 Cluster",
+  "Messier 10 Cluster",
+  "Messier 92 Cluster",
+  "Trifid Nebula (M20)",
+  "Lagoon Nebula (M8)",
+  "Eagle Nebula (M16)",
+  "Omega Nebula (M17)",
+  "Messier 22 Cluster",
+  "Wild Duck Cluster (M11)",
+  "Ring Nebula (M57)",
+  "Dumbbell Nebula (M27)",
+  "Veil Nebula (NGC 6960)",
+  "North America Nebula (NGC 7000)",
+  "Messier 15 Cluster",
+  "Messier 2 Cluster",
+  "Blue Snowball Nebula (NGC 7662)",
   "Custom",
 ];
 const SESSION_STATUSES = ["planned", "completed", "cancelled"] as const;
@@ -242,13 +296,43 @@ function summarizeHidden(targets: VisibleTarget[]) {
     (groups[label] ??= []).push(t.name);
   }
   return Object.entries(groups)
-    .map(([label, names]) => `${names.join(", ")} (${label})`)
+    .map(([label, names]) => {
+      const sample = names.slice(0, 3).join(", ");
+      const rest = names.length > 3 ? ` +${names.length - 3} more` : "";
+      return `${sample}${rest} (${label})`;
+    })
     .join(" · ");
+}
+
+interface SessionNightInfo {
+  dark_start?: string | null;
+  dark_end?: string | null;
+  sunset?: string | null;
+  sunrise?: string | null;
+  moon_illumination: number;
+  moon_up_fraction?: number | null;
+}
+
+type SessionDisplayStatus = "planned" | "completed" | "cancelled" | "missed";
+
+function displaySessionStatus(session: Session): SessionDisplayStatus {
+  if (session.status === "planned" && Date.parse(session.scheduled_start) < Date.now()) {
+    return "missed";
+  }
+  if (session.status === "completed" || session.status === "cancelled") {
+    return session.status;
+  }
+  return "planned";
 }
 export default function Dashboard({ onLogout }: Props) {
   const routerLocation = useLocation();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
+  // The ?location= deep link is an *initial* condition, read once at mount.
+  // It can't go in the loader's dependency array: that effect also triggers
+  // the URL rewrite below, so depending on searchParams would refetch every
+  // location and session each time the query string changed.
+  const initialLocationParam = useRef(searchParams.get("location"));
 
   const [locations, setLocations] = useState<Location[]>([]);
   const [sessions, setSessions] = useState<Session[]>([]);
@@ -275,8 +359,8 @@ export default function Dashboard({ onLogout }: Props) {
     (id: number | null) => navigate(id == null ? "/sessions" : `/sessions/${id}`),
     [navigate],
   );
-  const [hoveredSessionId, setHoveredSessionId] = useState<number | null>(null);
-  const [sessionFilter, setSessionFilter] = useState<"all" | "planned" | "completed">("all");
+  const [sessionFilter, setSessionFilter] = useState<"all" | SessionDisplayStatus>("all");
+  const [sessionSearch, setSessionSearch] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -294,8 +378,13 @@ export default function Dashboard({ onLogout }: Props) {
   const [newTarget, setNewTarget] = useState("Saturn");
   const [customTarget, setCustomTarget] = useState("");
   const [newStart, setNewStart] = useState("");
+  const [newPreparationNotes, setNewPreparationNotes] = useState("");
   // The night the whole page is about — Tonight, the advisor, and the
   // session form all read this (see ContextBar).
+  const [dateIsAutomatic, setDateIsAutomatic] = useState(() => {
+    const fromUrl = new URLSearchParams(window.location.search).get("date");
+    return !(fromUrl && /^\d{4}-\d{2}-\d{2}$/.test(fromUrl));
+  });
   const [dateStr, setDateStr] = useState(() => {
     // A shared /planner?date=… link should open on that night
     const fromUrl = new URLSearchParams(window.location.search).get("date");
@@ -309,6 +398,8 @@ export default function Dashboard({ onLogout }: Props) {
   const [newLogSeeing, setNewLogSeeing] = useState("");
   const [newLogTransparency, setNewLogTransparency] = useState("");
   const [newLogRating, setNewLogRating] = useState<number | "">("");
+  const [newLogEquipment, setNewLogEquipment] = useState("");
+  const [newLogExposure, setNewLogExposure] = useState("");
 
   // Edit-log state
   const [editingLogId, setEditingLogId] = useState<number | null>(null);
@@ -316,6 +407,11 @@ export default function Dashboard({ onLogout }: Props) {
   const [editSeeing, setEditSeeing] = useState("");
   const [editTransparency, setEditTransparency] = useState("");
   const [editRating, setEditRating] = useState<number | "">("");
+  const [editEquipment, setEditEquipment] = useState("");
+  const [editExposure, setEditExposure] = useState("");
+  const [editPreparationNotes, setEditPreparationNotes] = useState("");
+  const [sessionTarget, setSessionTarget] = useState<VisibleTarget | null>(null);
+  const [sessionNight, setSessionNight] = useState<SessionNightInfo | null>(null);
 
   function statusPillStyle(status?: string): React.CSSProperties {
     const s = (status ?? "").toLowerCase();
@@ -343,6 +439,14 @@ export default function Dashboard({ onLogout }: Props) {
         color: "#fca5a5",
       };
     }
+    if (s === "missed") {
+      return {
+        ...statusPillBase,
+        border: "1px solid rgba(251,191,36,0.35)",
+        background: "rgba(245,158,11,0.13)",
+        color: "#fcd34d",
+      };
+    }
     return statusPillBase;
   }
   function formatSessionTime(iso: string, tz: string) {
@@ -363,6 +467,29 @@ export default function Dashboard({ onLogout }: Props) {
     return d.toLocaleString();
   }
 }
+  function formatSessionRowTime(iso: string, timeZone: string) {
+    const d = parseApiDate(iso);
+    try {
+      const datePart = d.toLocaleDateString(undefined, {
+        timeZone,
+        weekday: "short",
+        month: "short",
+        day: "numeric",
+      });
+      const timePart = d.toLocaleTimeString(undefined, {
+        timeZone,
+        hour: "numeric",
+        minute: "2-digit",
+      });
+      return `${datePart} · ${timePart}`;
+    } catch {
+      return d.toLocaleString();
+    }
+  }
+
+  function sessionTimeZone(session: Session) {
+    return locations.find((location) => location.id === session.location_id)?.timezone || tz;
+  }
   function degToCompass(deg?: number | null) {
     if (deg == null || Number.isNaN(deg)) return null;
     const dirs = ["N","NNE","NE","ENE","E","ESE","SE","SSE","S","SSW","SW","WSW","W","WNW","NW","NNW"];
@@ -419,7 +546,7 @@ export default function Dashboard({ onLogout }: Props) {
         setSessions(sessRes.data);
         if (locRes.data.length > 0) {
           // A /planner?location=… link wins over the default first site
-          const wanted = Number(searchParams.get("location"));
+          const wanted = Number(initialLocationParam.current);
           const match = locRes.data.find((l) => l.id === wanted);
           setSelectedLocationId(match ? match.id : locRes.data[0].id);
         } else {
@@ -442,6 +569,30 @@ const tz =
   "UTC";
 const hasTime = Boolean(newStart);
 
+// Ask the astronomy layer which evening-date owns the current night. A
+// browser calendar flips at midnight, but an observing night runs until the
+// selected site's darkness ends. Explicit URL/date choices remain untouched.
+useEffect(() => {
+  if (selectedLocationId == null || !dateIsAutomatic) return;
+  let cancelled = false;
+
+  api.get<ObservingContext>("/targets/observing-context", {
+    params: { location_id: selectedLocationId, tz },
+  }).then((res) => {
+    if (cancelled) return;
+    setDateStr(res.data.date_local);
+    setNewStart(`${res.data.date_local}T22:00`);
+  }).catch((err) => {
+    // The local calendar date remains a safe fallback if astronomy lookup is
+    // temporarily unavailable; the Tonight card will surface its own error.
+    console.error(err);
+  });
+
+  return () => {
+    cancelled = true;
+  };
+}, [selectedLocationId, tz, dateIsAutomatic]);
+
 // Keep the planner context in the URL so refresh, Back, and a shared link
 // all land on the same site and night. Replace rather than push: changing
 // the date shouldn't bury the previous tab behind a stack of history entries.
@@ -462,6 +613,7 @@ useEffect(() => {
 // after midnight, hence setting it here rather than in an effect that would
 // keep dragging it back).
 function handleDateChange(next: string) {
+  setDateIsAutomatic(false);
   setDateStr(next);
   setNewStart(`${next}T22:00`);
 }
@@ -525,17 +677,20 @@ useEffect(() => {
 
   useEffect(() => {
   async function loadEditTargets() {
-    if (!editingSessionId || !selectedLocationId || !editStart) {
+    const editingSession = sessions.find((session) => session.id === editingSessionId);
+    if (!editingSession || !editStart) {
       setEditVisibleTargets([]);
       return;
     }
 
+    const editingTz = locations.find((location) => location.id === editingSession.location_id)?.timezone || tz;
+
     try {
       const res = await api.get<VisibleTarget[]>("/targets/visible", {
         params: {
-          location_id: selectedLocationId,
+          location_id: editingSession.location_id,
           when_local: editStart,
-          tz,
+          tz: editingTz,
         },
       });
       setEditVisibleTargets(res.data);
@@ -545,7 +700,7 @@ useEffect(() => {
     }
   }
   loadEditTargets();
-}, [editingSessionId, selectedLocationId, editStart, tz]);
+}, [editingSessionId, editStart, sessions, locations, tz]);
 
   
   function parseApiDate(s: string) {
@@ -586,9 +741,14 @@ const selectedSession = useMemo(
 );
 
 useEffect(() => {
+  setShowAddLog(false);
+  setEditingLogId(null);
+  setEditingSessionId(null);
   if (!selectedSessionId || !selectedSession) {
     setLogs([]);
     setWeather(null);
+    setSessionTarget(null);
+    setSessionNight(null);
     return;
   }
 
@@ -614,16 +774,60 @@ useEffect(() => {
       console.error(err);
       if (!cancelled) setWeather(null); // panel shows "No weather data."
     }
+
+    const location = locations.find((item) => item.id === selectedSession.location_id);
+    const sessionTz = location?.timezone || tz;
+    try {
+      const targetRes = await api.get<VisibleTarget[]>("/targets/visible", {
+        params: {
+          location_id: selectedSession.location_id,
+          when: selectedSession.scheduled_start,
+        },
+      });
+      if (!cancelled) {
+        setSessionTarget(
+          targetRes.data.find(
+            (target) => target.name.toLowerCase() === selectedSession.target_name.toLowerCase(),
+          ) ?? null,
+        );
+      }
+    } catch (err) {
+      console.error(err);
+      if (!cancelled) setSessionTarget(null);
+    }
+
+    try {
+      const parts = new Intl.DateTimeFormat("en-CA", {
+        timeZone: sessionTz,
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        hourCycle: "h23",
+      }).formatToParts(parseApiDate(selectedSession.scheduled_start));
+      const part = (type: string) => Number(parts.find((p) => p.type === type)?.value ?? 0);
+      const owningDate = new Date(Date.UTC(part("year"), part("month") - 1, part("day") - (part("hour") < 12 ? 1 : 0)));
+      const nightRes = await api.get<SessionNightInfo>("/targets/night", {
+        params: {
+          location_id: selectedSession.location_id,
+          date_local: owningDate.toISOString().slice(0, 10),
+          tz: sessionTz,
+        },
+      });
+      if (!cancelled) setSessionNight(nightRes.data);
+    } catch (err) {
+      console.error(err);
+      if (!cancelled) setSessionNight(null);
+    }
   })();
 
   return () => {
     cancelled = true;
   };
-}, [selectedSessionId, selectedSession?.scheduled_start, tz]);
+}, [selectedSessionId, selectedSession, locations, tz]);
 
-
-  const filteredSessions =
-    selectedLocationId == null ? [] : sessions.filter((s) => s.location_id === selectedLocationId);
+  const filteredSessions = sessions;
+  const showSessionLocations = new Set(filteredSessions.map((session) => session.location_id)).size > 1;
 
  
 
@@ -632,13 +836,19 @@ useEffect(() => {
   // newest first. Cancelled and past-dated planned sessions are history too —
   // they're no longer things you're going to do.
   const sessionGroups = useMemo(() => {
-    const shown =
-      sessionFilter === "all"
-        ? filteredSessions
-        : filteredSessions.filter((s) => s.status === sessionFilter);
+    const query = sessionSearch.trim().toLowerCase();
+    const searched = query
+      ? filteredSessions.filter((session) => {
+          const locationName = locations.find((location) => location.id === session.location_id)?.name ?? "";
+          return `${session.target_name} ${locationName}`.toLowerCase().includes(query);
+        })
+      : filteredSessions;
+    const shown = sessionFilter === "all"
+      ? searched
+      : searched.filter((session) => displaySessionStatus(session) === sessionFilter);
     const now = Date.now();
     const at = (s: Session) => Date.parse(s.scheduled_start);
-    const isUpcoming = (s: Session) => s.status === "planned" && at(s) >= now;
+    const isUpcoming = (s: Session) => displaySessionStatus(s) === "planned" && at(s) >= now;
 
     const upcoming = shown.filter(isUpcoming).sort((a, b) => at(a) - at(b));
     const past = shown.filter((s) => !isUpcoming(s)).sort((a, b) => at(b) - at(a));
@@ -647,7 +857,7 @@ useEffect(() => {
       { label: "Upcoming", rows: upcoming },
       { label: "Past", rows: past },
     ].filter((g) => g.rows.length > 0);
-  }, [filteredSessions, sessionFilter]);
+  }, [filteredSessions, sessionFilter, sessionSearch, locations]);
 
   // A filter that hides the selected session must not leave its detail panel
   // on screen — "No completed sessions" sitting directly above an open
@@ -669,7 +879,7 @@ useEffect(() => {
     (locationId: number) => {
       const mine = sessions.filter((s) => s.location_id === locationId);
       return {
-        planned: mine.filter((s) => s.status === "planned").length,
+        planned: mine.filter((s) => displaySessionStatus(s) === "planned").length,
         completed: mine.filter((s) => s.status === "completed").length,
       };
     },
@@ -735,6 +945,29 @@ useEffect(() => {
 
   // ---------- Session handlers ----------
 
+  function beginEditSession(session: Session) {
+    setEditingSessionId(session.id);
+    setEditStatus(session.status || "planned");
+    const isPreset = PRESET_TARGETS.includes(session.target_name);
+    setEditTarget(isPreset ? session.target_name : "Custom");
+    setEditCustomTarget(isPreset ? "" : session.target_name);
+    setEditStart(utcIsoToLocalInput(session.scheduled_start, sessionTimeZone(session)));
+    setEditPreparationNotes(session.preparation_notes ?? "");
+  }
+
+  async function handleSessionStatus(status: "planned" | "completed" | "cancelled") {
+    if (!selectedSession) return;
+    setError(null);
+    try {
+      const res = await api.patch<Session>(`/sessions/${selectedSession.id}`, { status });
+      setSessions((prev) => prev.map((session) => session.id === res.data.id ? res.data : session));
+      if (status === "completed") setShowAddLog(false);
+    } catch (err) {
+      console.error(err);
+      setError("Failed to update session status.");
+    }
+  }
+
   function handlePlanFromTonight(targetName: string, whenLocal: string) {
     setNewStart(whenLocal);
     setNewTarget(targetName);
@@ -764,6 +997,7 @@ useEffect(() => {
         scheduled_start_local: editStart,
         tz,
         status: editStatus,
+        preparation_notes: editPreparationNotes.trim() || null,
       };
 
 
@@ -772,12 +1006,6 @@ useEffect(() => {
       setSessions((prev) =>
         prev.map((s) => (s.id === editingSessionId ? res.data : s)),
       );
-    if (selectedSessionId === editingSessionId) {
-        // force re-fetch by briefly clearing then restoring
-        setSelectedSessionId(null);
-        setTimeout(() => setSelectedSessionId(editingSessionId), 0);
-    }
-
       setEditingSessionId(null);
     } catch (err) {
       console.error(err);
@@ -817,9 +1045,11 @@ useEffect(() => {
         tz,                              // "America/Toronto"
         location_id: selectedLocationId,
         status: "planned",
+        preparation_notes: newPreparationNotes.trim() || null,
       });
       setSessions((prev) => [...prev, res.data]);
       setShowSessionDrawer(false);
+      setNewPreparationNotes("");
       // Planning is finished and there's now a concrete session to review
       setSelectedSessionId(res.data.id);
       // optional: clear start time
@@ -847,6 +1077,8 @@ useEffect(() => {
         transparency: newLogTransparency || null,
         rating:
           newLogRating === "" ? null : Number(newLogRating),
+        equipment: newLogEquipment.trim() || null,
+        exposure: newLogExposure.trim() || null,
       };
 
       const res = await api.post<ObservationLog>(
@@ -859,6 +1091,11 @@ useEffect(() => {
       setNewLogSeeing("");
       setNewLogTransparency("");
       setNewLogRating("");
+      setNewLogEquipment("");
+      setNewLogExposure("");
+      setSessions((prev) => prev.map((session) =>
+        session.id === selectedSessionId ? { ...session, status: "completed" } : session,
+      ));
     } catch (err) {
       console.error(err);
       setError("Failed to create log.");
@@ -918,6 +1155,8 @@ async function handleDeleteSession(id: number) {
         seeing: editSeeing || null,
         transparency: editTransparency || null,
         rating: editRating === "" ? null : Number(editRating),
+        equipment: editEquipment.trim() || null,
+        exposure: editExposure.trim() || null,
       };
 
       const res = await api.patch<ObservationLog>(
@@ -958,7 +1197,7 @@ async function handleDeleteSession(id: number) {
             <label
               style={{
                 display: "block",
-                fontSize: "0.8rem",
+                fontSize: fontSize.small,
                 marginBottom: "0.2rem",
               }}
             >
@@ -976,7 +1215,7 @@ async function handleDeleteSession(id: number) {
             <label
               style={{
                 display: "block",
-                fontSize: "0.8rem",
+                fontSize: fontSize.small,
                 marginBottom: "0.2rem",
               }}
             >
@@ -1031,7 +1270,7 @@ async function handleDeleteSession(id: number) {
               <label
                 style={{
                   display: "block",
-                  fontSize: "0.8rem",
+                  fontSize: fontSize.small,
                   marginBottom: "0.2rem",
                 }}
               >
@@ -1044,6 +1283,23 @@ async function handleDeleteSession(id: number) {
               </label>
             </div>
           )}
+
+          <label
+            style={{
+              display: "block",
+              fontSize: fontSize.small,
+              marginBottom: "0.2rem",
+            }}
+          >
+            Preparation notes <span style={{ color: textColor.muted }}>(optional)</span>
+            <textarea
+              value={newPreparationNotes}
+              onChange={(e) => setNewPreparationNotes(e.target.value)}
+              rows={3}
+              placeholder="Gear, eyepieces, filters, or a short observing plan"
+              style={{ ...fieldStyle, marginTop: "0.2rem", resize: "vertical" }}
+            />
+          </label>
 
         
           <button type="submit" style={{ ...btnPrimary, marginTop: "0.6rem" }}>
@@ -1125,179 +1381,35 @@ async function handleDeleteSession(id: number) {
     />
   );
 
-  // One session row. Extracted because the list now renders it under two
-  // headings (Upcoming / Past) rather than in a single flat sequence.
-  const renderSessionRow = (s: Session) => (
-      <li
-        key={s.id}
-        onMouseEnter={() => setHoveredSessionId(s.id)}
-        onMouseLeave={() => setHoveredSessionId(null)}
-        style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}
-      >
-        {editingSessionId === s.id ? (
-          /* edit form */
-          <form onSubmit={handleUpdateSession} style={{ flex: 1, display: "grid", gap: "0.35rem" }}>
-            <div style={{ display: "flex", gap: "0.5rem" }}>
-              <label style={{ flex: 1, fontSize: "0.8rem" }}>
-                Target
-                <select
-                  value={editTarget}
-                  onChange={(e) => setEditTarget(e.target.value)}
-                  style={{ ...selectFieldStyle, marginTop: "0.2rem" }}
-                >
-                  {editVisibleTargets
-                    .filter((t) => t.visible)
-                    .map((t) => (
-                      <option key={t.name} value={t.name}>
-                        {t.name} (alt {Math.round(t.altitude_deg)}°)
-                      </option>
-                    ))}
-                  <option value="Custom">Custom</option>
-                </select>
-                {editVisibleTargets.some(t => !t.visible) && (
-                  <div style={{ fontSize: "0.8rem", color: "#9ca3af", marginTop: "0.4rem" }}>
-                    Not visible: {summarizeHidden(editVisibleTargets)}
-                  </div>
-                )}
-              </label>
-
-              <label style={{ width: 140, fontSize: "0.8rem" }}>
-                Status
-                <select
-                  value={editStatus}
-                  onChange={(e) => setEditStatus(e.target.value)}
-                  style={{ ...selectFieldStyle, marginTop: "0.2rem" }}
-                >
-                  {SESSION_STATUSES.map((st) => (
-                    <option key={st} value={st}>
-                      {st}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            </div>
-
-            {editTarget === "Custom" && (
-              <label style={{ fontSize: "0.8rem" }}>
-                Custom target
-                <input
-                  value={editCustomTarget}
-                  onChange={(e) => setEditCustomTarget(e.target.value)}
-                  style={{ ...fieldStyle, marginTop: "0.2rem" }}
-                />
-              </label>
-            )}
-
-            <label style={{ fontSize: "0.8rem" }}>
-              Start time
-              <input
-                type="datetime-local"
-                value={editStart}
-                onChange={(e) => setEditStart(e.target.value)}
-                onPointerDown={(e) =>
-                  (e.currentTarget as HTMLInputElement).showPicker?.()
-                }
-                style={{ ...fieldStyle, marginTop: "0.2rem" }}
-              />
-            </label>
-
-            <div style={{ display: "flex", gap: "0.5rem" }}>
-              <button type="submit" style={btnPrimarySm}>
-                Save
-              </button>
-              <button
-                type="button"
-                onClick={() => setEditingSessionId(null)}
-                style={btnSecondarySm}
-              >
-                Cancel
-              </button>
-            </div>
-          </form>
-        ) : (
-        <>
-           <button
-            style={{
-              background: s.id === selectedSessionId ? "rgba(52,211,153,0.15)" : "transparent",
-              border: "none",
-              textAlign: "left",
-              padding: "0.45rem 0.5rem",
-              cursor: "pointer",
-              flex: 1,
-              borderRadius: 10,
-              color: "#e5e7eb",
-            }}
-            onClick={() => setSelectedSessionId(s.id)}
-          >
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "0.75rem" }}>
-              <div style={{ minWidth: 0, display: "grid", gap: "0.15rem" }}>
-                <div
-                  style={{
-                    fontWeight: 700,
-                    overflow: "hidden",
-                    textOverflow: "ellipsis",
-                    whiteSpace: "nowrap",
-                  }}
-                >
-                  {s.target_name}
-                </div>
-
-                {/* Location matters once sessions span several sites */}
-                <div style={{ fontSize: fontSize.small, color: textColor.secondary }}>
-                  {formatSessionTime(s.scheduled_start, tz)}
-                  {(() => {
-                    const loc = locations.find((l) => l.id === s.location_id);
-                    return loc ? ` · ${loc.name}` : "";
-                  })()}
-                </div>
-              </div>
-
-              <span style={statusPillStyle(s.status)}>{s.status}</span>
-            </div>
-          </button>
-            <div style={{ display: "flex", alignItems: "center", gap: "0.4rem" }}>
-              <button
-                type="button"
-                onClick={() => {
-                  setEditingSessionId(s.id);
-                  setEditStatus(s.status || "planned");
-
-                  const isPreset = PRESET_TARGETS.includes(s.target_name);
-                  setEditTarget(isPreset ? s.target_name : "Custom");
-                  setEditCustomTarget(isPreset ? "" : s.target_name);
-
-                  setEditStart(utcIsoToLocalInput(s.scheduled_start, tz));
-                }}
-                style={btnSecondarySm}
-              >
-                Edit
-              </button>
-
-              <button
-                type="button"
-                onClick={() => handleDeleteSession(s.id)}
-                title="Delete session"
-                aria-label={`Delete session ${s.target_name}`}
-                style={{
-                  ...iconDangerButtonSm,
-                  opacity: hoveredSessionId === s.id ? 1 : 0,
-                  pointerEvents: hoveredSessionId === s.id ? "auto" : "none",
-                  transition: "opacity 140ms ease",
-                }}
-              >
-                <TrashIcon size={15} />
-              </button>
-            </div>
-          </>
-        )}
+  const renderSimpleSessionRow = (session: Session) => {
+    const displayStatus = displaySessionStatus(session);
+    const location = locations.find((item) => item.id === session.location_id);
+    return (
+      <li key={session.id} className="session-row">
+        <button
+          type="button"
+          className="session-row-button"
+          onClick={() => setSelectedSessionId(session.id)}
+          aria-current={session.id === selectedSessionId ? "true" : undefined}
+        >
+          <span className="session-row-copy">
+            <strong>{session.target_name}</strong>
+            <span>
+              {formatSessionRowTime(session.scheduled_start, sessionTimeZone(session))}
+              {showSessionLocations && location ? ` · ${location.name}` : ""}
+            </span>
+          </span>
+          {displayStatus !== "planned" && (
+            <span style={statusPillStyle(displayStatus)}>{displayStatus}</span>
+          )}
+        </button>
       </li>
-  );
+    );
+  };
 
-  const sessionsView = (
-    <>
-  {/* Sessions */}
-  <section style={cardStyle}>
-    <div style={panelHeaderRow}>
+  const sessionListPanel = (
+  <section className="session-master" style={cardStyle}>
+    <div style={{ ...panelHeaderRow, flexWrap: "wrap" }}>
       <h3 style={{ ...sectionTitleStyle, margin: 0 }}>Sessions</h3>
       {/* One dominant action for this tab */}
       <button
@@ -1339,30 +1451,41 @@ async function handleDeleteSession(id: number) {
         at an empty list you can't explain. */}
     <div style={{ marginBottom: "0.85rem" }}>
       <SegmentedControl
-        options={["All", "Planned", "Completed"]}
+        options={["All", "Planned", "Completed", "Missed", "Cancelled"]}
         value={sessionFilter}
         onChange={(v) =>
-          setSessionFilter((v as "all" | "planned" | "completed" | null) ?? "all")
+          setSessionFilter((v as "all" | SessionDisplayStatus | null) ?? "all")
         }
       />
     </div>
 
+    {filteredSessions.length >= 8 && (
+      <label className="session-search">
+        <span className="sr-only">Search sessions</span>
+        <input
+          type="search"
+          value={sessionSearch}
+          onChange={(event) => setSessionSearch(event.target.value)}
+          placeholder="Search targets or locations"
+          style={fieldStyle}
+        />
+      </label>
+    )}
+
     <div
+      className="session-list-scroll"
       style={{
-        display: "flex",
-        gap: "1rem",
-        alignItems: "flex-start",
-        flexWrap: "wrap",
+        minHeight: 0,
+        overflowY: "auto",
+        paddingRight: "0.2rem",
       }}
     >
-      {/* ~55/45 with the New Session form: the form's fields were
-          cramped while this column ran mostly empty. */}
-      <div style={{ flex: "1.1 1 340px", minWidth: 300 }}>
+      <div style={{ minWidth: 0 }}>
         {sessionGroups.map((g) => (
           <div key={g.label} style={{ marginBottom: "1rem" }}>
             <div
               style={{
-                fontSize: "0.72rem",
+                fontSize: fontSize.small,
                 textTransform: "uppercase",
                 letterSpacing: "0.08em",
                 color: textColor.muted,
@@ -1372,7 +1495,7 @@ async function handleDeleteSession(id: number) {
               {g.label} · {g.rows.length}
             </div>
             <ul style={{ listStyle: "none", paddingLeft: 0, margin: 0 }}>
-              {g.rows.map(renderSessionRow)}
+              {g.rows.map(renderSimpleSessionRow)}
             </ul>
           </div>
         ))}
@@ -1393,19 +1516,68 @@ async function handleDeleteSession(id: number) {
         )}
       </div>
 
-      {/* Boxed so the form reads as its own block rather than loose
-          fields floating beside a short list. */}
     </div>
   </section>
+  );
 
-  {/* Session details: weather + logs */}
-  {selectedSessionId && (
-    <section style={cardStyle}>
+  const selectedDisplayStatus = selectedSession ? displaySessionStatus(selectedSession) : null;
+  const sessionHasStarted = selectedSession
+    ? Date.parse(selectedSession.scheduled_start) <= Date.now()
+    : false;
+  const canAddLog = Boolean(
+    selectedSession && sessionHasStarted && selectedDisplayStatus !== "cancelled",
+  );
+  const sessionLocation = selectedSession
+    ? locations.find((location) => location.id === selectedSession.location_id)
+    : null;
+  const detailTimeZone = selectedSession ? sessionTimeZone(selectedSession) : tz;
+  const formatAstronomyTime = (iso?: string | null) => iso
+    ? parseApiDate(iso).toLocaleTimeString(undefined, {
+        timeZone: detailTimeZone,
+        hour: "numeric",
+        minute: "2-digit",
+      })
+    : "—";
+
+  const sessionDetailPanel = selectedSessionId ? (
+    <section className="session-detail" style={cardStyle}>
+      <button
+        type="button"
+        className="session-mobile-back"
+        onClick={() => navigate("/sessions", { replace: true })}
+        style={{ ...btnSecondarySm, marginBottom: "0.9rem" }}
+      >
+        ← Sessions
+      </button>
       {/* The target is the subject of this panel, so it leads at title
           size with the status beside it; the date drops to its own
           line, and the forecast states its conclusion rather than
           leaving the user to interpret a cloud percentage. */}
-      <div style={{ marginBottom: "1rem" }}>
+      <div className="session-detail-header" style={{ marginBottom: "1rem" }}>
+        {selectedSession && (
+          <div className="session-detail-actions">
+            <button type="button" onClick={() => beginEditSession(selectedSession)} style={btnSecondarySm}>
+              Edit
+            </button>
+            {(selectedDisplayStatus === "planned" || selectedDisplayStatus === "missed") && (
+              <button type="button" onClick={() => handleSessionStatus("completed")} style={btnPrimarySm}>
+                Mark complete
+              </button>
+            )}
+            {(selectedDisplayStatus === "planned" || selectedDisplayStatus === "missed") && (
+              <button type="button" onClick={() => handleSessionStatus("cancelled")} style={btnSecondarySm}>
+                Cancel
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => handleDeleteSession(selectedSession.id)}
+              style={{ ...btnSecondarySm, color: "#fca5a5", borderColor: "rgba(248,113,113,0.4)" }}
+            >
+              Delete
+            </button>
+          </div>
+        )}
         <div style={{ display: "flex", alignItems: "center", gap: "0.6rem", flexWrap: "wrap" }}>
           <h3
             style={{
@@ -1418,8 +1590,8 @@ async function handleDeleteSession(id: number) {
             {selectedSession?.target_name ?? "Session details"}
           </h3>
           {selectedSession && (
-            <span style={statusPillStyle(selectedSession.status)}>
-              {selectedSession.status}
+            <span style={statusPillStyle(selectedDisplayStatus ?? selectedSession.status)}>
+              {selectedDisplayStatus ?? selectedSession.status}
             </span>
           )}
         </div>
@@ -1432,11 +1604,12 @@ async function handleDeleteSession(id: number) {
               marginTop: "0.25rem",
             }}
           >
-            {formatSessionTime(selectedSession.scheduled_start, tz)}
+            {formatSessionTime(selectedSession.scheduled_start, detailTimeZone)}
+            {showSessionLocations && sessionLocation ? ` · ${sessionLocation.name}` : ""}
           </div>
         )}
 
-        {weather?.verdict && weather.verdict_reason && (
+        {selectedDisplayStatus !== "completed" && weather?.verdict && weather.verdict_reason && (
           <div
             style={{
               ...verdictPill(weather.verdict),
@@ -1447,32 +1620,83 @@ async function handleDeleteSession(id: number) {
           </div>
         )}
       </div>
+      {selectedSession && editingSessionId === selectedSession.id && (
+        <form onSubmit={handleUpdateSession} className="session-edit-panel" style={inset}>
+          <div className="session-edit-grid">
+            <label>
+              Target
+              <select value={editTarget} onChange={(e) => setEditTarget(e.target.value)} style={selectFieldStyle}>
+                {editVisibleTargets.filter((target) => target.visible).map((target) => (
+                  <option key={target.name} value={target.name}>
+                    {target.name} (alt {Math.round(target.altitude_deg)}°)
+                  </option>
+                ))}
+                <option value="Custom">Custom</option>
+              </select>
+            </label>
+            <label>
+              Start time
+              <input
+                type="datetime-local"
+                value={editStart}
+                onChange={(e) => setEditStart(e.target.value)}
+                onPointerDown={(e) => (e.currentTarget as HTMLInputElement).showPicker?.()}
+                style={fieldStyle}
+              />
+            </label>
+            <label>
+              Status
+              <select value={editStatus} onChange={(e) => setEditStatus(e.target.value)} style={selectFieldStyle}>
+                {SESSION_STATUSES.map((status) => <option key={status}>{status}</option>)}
+              </select>
+            </label>
+          </div>
+          {editTarget === "Custom" && (
+            <label>
+              Custom target
+              <input value={editCustomTarget} onChange={(e) => setEditCustomTarget(e.target.value)} style={fieldStyle} />
+            </label>
+          )}
+          <label>
+            Preparation notes
+            <textarea
+              value={editPreparationNotes}
+              onChange={(e) => setEditPreparationNotes(e.target.value)}
+              rows={3}
+              style={{ ...fieldStyle, resize: "vertical" }}
+            />
+          </label>
+          <div style={{ display: "flex", gap: "0.5rem" }}>
+            <button type="submit" style={btnPrimarySm}>Save changes</button>
+            <button type="button" onClick={() => setEditingSessionId(null)} style={btnSecondarySm}>Close</button>
+          </div>
+        </form>
+      )}
       <div
-        className="flex-cols"
+        className={`session-detail-columns${selectedDisplayStatus === "planned" || selectedDisplayStatus === "missed" ? " session-detail-planned" : ""}`}
         style={{
-          display: "flex",
-          gap: "2rem",
-          flexWrap: "wrap",
           alignItems: "flex-start",
         }}
       >
         {/* Weather */}
         <div
+          className="session-weather-panel"
           style={{
-            flex: "1.2 1 360px", // grows a bit more than logs
-            minWidth: 0,         // .flex-cols handles the phone case
+            minWidth: 0,
             ...inset,
             padding: "0.85rem 1rem",
           }}
         >
           <h4 style={{ fontSize: "0.95rem", marginBottom: "0.35rem" }}>
-            Weather at planned time
+            {selectedDisplayStatus === "completed" ? "Actual conditions" : "Forecast"}
           </h4>
 
           <div style={weatherSubtitleStyle}>
-            {selectedSession
+            {selectedDisplayStatus === "completed"
+              ? "Recorded during this observing session"
+              : selectedSession
               ? `Forecast for ${parseApiDate(selectedSession.scheduled_start).toLocaleString(undefined, {
-                  timeZone: tz,
+                  timeZone: detailTimeZone,
                   month: "short",
                   day: "numeric",
                   hour: "numeric",
@@ -1482,7 +1706,31 @@ async function handleDeleteSession(id: number) {
               : "Forecast time unavailable"}
           </div>
 
-          {weather ? (
+          {selectedDisplayStatus === "completed" ? (
+            logs.length > 0 ? (
+              <>
+                <div style={{ fontSize: "1.25rem", fontWeight: 700, marginTop: "0.8rem" }}>
+                  {logs[0].notes || "Observation recorded"}
+                </div>
+                <div style={statGridStyle}>
+                  <div style={statChipStyle}>
+                    <span style={statLabelStyle}>Seeing</span>
+                    <span style={{ ...statValueStyle, textTransform: "capitalize" }}>{logs[0].seeing ?? "—"}</span>
+                  </div>
+                  <div style={statChipStyle}>
+                    <span style={statLabelStyle}>Transparency</span>
+                    <span style={{ ...statValueStyle, textTransform: "capitalize" }}>{logs[0].transparency ?? "—"}</span>
+                  </div>
+                  <div style={statChipStyle}>
+                    <span style={statLabelStyle}>Rating</span>
+                    <StarRating value={logs[0].rating ?? null} readOnly size="0.95rem" />
+                  </div>
+                </div>
+              </>
+            ) : (
+              <p style={{ color: textColor.secondary }}>No actual conditions have been recorded yet.</p>
+            )
+          ) : weather ? (
             <>
               {/* Headline row */}
               <div style={{ display: "flex", gap: "0.9rem", alignItems: "center", marginTop: "0.7rem" }}>
@@ -1502,7 +1750,7 @@ async function handleDeleteSession(id: number) {
                       {weatherLabel(weather)}
                     </div>
                   </div>
-                  <div style={{ fontSize: "0.8rem", color: "#9ca3af" }}>
+                  <div style={{ fontSize: fontSize.small, color: "#9ca3af" }}>
                     {weather.is_day == null ? "" : weather.is_day ? "Daytime" : "Night"}
                   </div>
                 </div>
@@ -1530,12 +1778,80 @@ async function handleDeleteSession(id: number) {
             <p style={{ marginTop: "0.6rem" }}>No weather data.</p>
           )}
 
+          {selectedDisplayStatus !== "completed" && selectedDisplayStatus !== "cancelled" && (
+            <div className="session-plan-facts">
+              <h4>Observing plan</h4>
+              <div className="session-forecast-stats" style={statGridStyle}>
+                <div style={statChipStyle}>
+                  <span style={statLabelStyle}>Target position</span>
+                  <span style={statValueStyle}>
+                    {sessionTarget
+                      ? `${Math.round(sessionTarget.altitude_deg)}° · ${degToCompass(sessionTarget.azimuth_deg) ?? "—"}`
+                      : "—"}
+                  </span>
+                </div>
+                <div style={statChipStyle}>
+                  <span style={statLabelStyle}>Moon</span>
+                  <span style={statValueStyle}>
+                    {sessionNight
+                      ? `${Math.round(sessionNight.moon_illumination * 100)}% · ${Math.round((sessionNight.moon_up_fraction ?? 0) * 100)}% of dark window`
+                      : "—"}
+                  </span>
+                </div>
+                <div style={{ ...statChipStyle, gridColumn: "1 / -1" }}>
+                  <span style={statLabelStyle}>Best dark window</span>
+                  <span style={statValueStyle}>
+                    {formatAstronomyTime(sessionNight?.dark_start ?? sessionNight?.sunset)}–{formatAstronomyTime(sessionNight?.dark_end ?? sessionNight?.sunrise)}
+                  </span>
+                </div>
+              </div>
+              <div className="session-prep-notes">
+                <span style={statLabelStyle}>Preparation</span>
+                <p>{selectedSession?.preparation_notes || "No preparation notes yet. Use Edit to add gear, filters, or a checklist."}</p>
+              </div>
+            </div>
+          )}
+
         </div>
+
+        {(selectedDisplayStatus === "planned" || selectedDisplayStatus === "missed") && (
+          <div className="session-plan-panel" style={{ ...inset, padding: "0.85rem 1rem" }}>
+            <h4 style={{ fontSize: "0.95rem", margin: "0 0 0.35rem" }}>Observing plan</h4>
+            <div style={weatherSubtitleStyle}>Astronomy at the scheduled start time</div>
+            <div className="session-plan-grid">
+              <div className="session-plan-fact">
+                <span>Target position</span>
+                <strong>
+                  {sessionTarget
+                    ? `${Math.round(sessionTarget.altitude_deg)}° · ${degToCompass(sessionTarget.azimuth_deg) ?? "—"}`
+                    : "—"}
+                </strong>
+              </div>
+              <div className="session-plan-fact">
+                <span>Moon interference</span>
+                <strong>{sessionNight ? `${Math.round(sessionNight.moon_illumination * 100)}% illuminated` : "—"}</strong>
+                {sessionNight && (
+                  <small>Above the horizon for {Math.round((sessionNight.moon_up_fraction ?? 0) * 100)}% of darkness</small>
+                )}
+              </div>
+              <div className="session-plan-fact session-plan-window">
+                <span>Best dark window</span>
+                <strong>
+                  {formatAstronomyTime(sessionNight?.dark_start ?? sessionNight?.sunset)}–{formatAstronomyTime(sessionNight?.dark_end ?? sessionNight?.sunrise)}
+                </strong>
+              </div>
+            </div>
+            <div className="session-prep-notes">
+              <span style={statLabelStyle}>Preparation</span>
+              <p>{selectedSession?.preparation_notes || "No preparation notes yet. Use Edit to add gear, filters, or a checklist."}</p>
+            </div>
+          </div>
+        )}
 
         {/* Logs + Add/Edit */}
         <div
+          className="session-logs-panel"
           style={{
-            flex: "1 1 440px",
             minWidth: 0,
             ...inset,
             padding: "0.85rem 1rem",
@@ -1544,19 +1860,29 @@ async function handleDeleteSession(id: number) {
           <div style={panelHeaderRow}>
             <h4 style={{ fontSize: "0.95rem", margin: 0 }}>Observation Logs</h4>
 
-            <button
-              type="button"
-              onClick={() => setShowAddLog(v => !v)}
-              style={{
-                ...btnSecondarySm,
-                background: showAddLog ? "rgba(59,130,246,0.15)" : "transparent",
-              }}
-            >
-              {showAddLog ? "Close" : "+ Add log"}
-            </button>
+            {canAddLog ? (
+              <button
+                type="button"
+                onClick={() => setShowAddLog(v => !v)}
+                style={{
+                  ...btnSecondarySm,
+                  background: showAddLog ? "rgba(59,130,246,0.15)" : "transparent",
+                }}
+              >
+                {showAddLog
+                  ? "Close"
+                  : selectedDisplayStatus === "missed"
+                    ? "Complete & add log"
+                    : "+ Add log"}
+              </button>
+            ) : (
+              <span style={{ fontSize: fontSize.small, color: textColor.muted }}>
+                {selectedDisplayStatus === "cancelled" ? "Cancelled" : "Available when session begins"}
+              </span>
+            )}
           </div>
 
-          {showAddLog && (
+          {showAddLog && canAddLog && (
             <form
               onSubmit={handleCreateLog}
               style={{
@@ -1567,7 +1893,7 @@ async function handleDeleteSession(id: number) {
                 background: surface.sunken,
               }}
             >
-              <label style={{ display: "block", fontSize: "0.8rem" }}>
+              <label style={{ display: "block", fontSize: fontSize.small }}>
                 Notes
                 <textarea
                   value={newLogNotes}
@@ -1577,8 +1903,29 @@ async function handleDeleteSession(id: number) {
                 />
               </label>
 
+              <div className="session-log-meta-fields">
+                <label>
+                  Equipment
+                  <input
+                    value={newLogEquipment}
+                    onChange={(event) => setNewLogEquipment(event.target.value)}
+                    placeholder="Telescope, eyepiece, camera"
+                    style={fieldStyle}
+                  />
+                </label>
+                <label>
+                  Exposure
+                  <input
+                    value={newLogExposure}
+                    onChange={(event) => setNewLogExposure(event.target.value)}
+                    placeholder="e.g. 30 × 120s, ISO 800"
+                    style={fieldStyle}
+                  />
+                </label>
+              </div>
+
               <div style={{ display: "grid", gap: "0.6rem", marginTop: "0.6rem" }}>
-                <div style={{ fontSize: "0.8rem" }}>
+                <div style={{ fontSize: fontSize.small }}>
                   <div style={{ marginBottom: "0.3rem" }}>Seeing</div>
                   <SegmentedControl
                     options={QUALITY_OPTIONS}
@@ -1587,7 +1934,7 @@ async function handleDeleteSession(id: number) {
                   />
                 </div>
 
-                <div style={{ fontSize: "0.8rem" }}>
+                <div style={{ fontSize: fontSize.small }}>
                   <div style={{ marginBottom: "0.3rem" }}>Transparency</div>
                   <SegmentedControl
                     options={QUALITY_OPTIONS}
@@ -1596,7 +1943,7 @@ async function handleDeleteSession(id: number) {
                   />
                 </div>
 
-                <div style={{ fontSize: "0.8rem" }}>
+                <div style={{ fontSize: fontSize.small }}>
                   <div style={{ marginBottom: "0.3rem" }}>Rating</div>
                   <StarRating
                     value={newLogRating === "" ? null : newLogRating}
@@ -1606,7 +1953,7 @@ async function handleDeleteSession(id: number) {
               </div>
 
               <button type="submit" style={{ ...btnPrimarySm, marginTop: "0.6rem" }}>
-                Add Log
+                {selectedDisplayStatus === "missed" ? "Mark complete & add log" : "Add log"}
               </button>
             </form>
           )}
@@ -1614,12 +1961,16 @@ async function handleDeleteSession(id: number) {
           {logs.length === 0 ? (
             <div
               style={{
-                fontSize: "0.85rem",
+                fontSize: fontSize.small,
                 color: "#9ca3af",
                 padding: "0.6rem 0.2rem 0.2rem",
               }}
             >
-              No logs yet. Click <strong style={{ color: "#e5e7eb" }}>+ Add log</strong> to record what you saw.
+              {canAddLog
+                ? "No logs yet. Add one to record what you saw."
+                : sessionHasStarted
+                  ? "No logs can be added to this cancelled session."
+                  : "No logs yet. Logging becomes available when the session begins."}
             </div>
           ) : (
             <ul
@@ -1644,7 +1995,7 @@ async function handleDeleteSession(id: number) {
                   {editingLogId === log.id ? (
                     // --- EDIT MODE ---
                     <form onSubmit={handleUpdateLog} style={{ display: "grid", gap: "0.5rem" }}>
-                      <label style={{ fontSize: "0.8rem" }}>
+                      <label style={{ fontSize: fontSize.small }}>
                         Notes
                         <textarea
                           value={editNotes}
@@ -1654,8 +2005,19 @@ async function handleDeleteSession(id: number) {
                         />
                       </label>
 
+                      <div className="session-log-meta-fields">
+                        <label>
+                          Equipment
+                          <input value={editEquipment} onChange={(event) => setEditEquipment(event.target.value)} style={fieldStyle} />
+                        </label>
+                        <label>
+                          Exposure
+                          <input value={editExposure} onChange={(event) => setEditExposure(event.target.value)} style={fieldStyle} />
+                        </label>
+                      </div>
+
                       <div style={{ display: "grid", gap: "0.6rem" }}>
-                        <div style={{ fontSize: "0.8rem" }}>
+                        <div style={{ fontSize: fontSize.small }}>
                           <div style={{ marginBottom: "0.3rem" }}>Seeing</div>
                           <SegmentedControl
                             options={QUALITY_OPTIONS}
@@ -1663,13 +2025,13 @@ async function handleDeleteSession(id: number) {
                             onChange={(v) => setEditSeeing(v ?? "")}
                           />
                           {editSeeing && !QUALITY_OPTIONS.includes(editSeeing.toLowerCase()) && (
-                            <div style={{ fontSize: "0.75rem", color: "#9ca3af", marginTop: "0.25rem" }}>
+                            <div style={{ fontSize: fontSize.small, color: "#9ca3af", marginTop: "0.25rem" }}>
                               Keeping the earlier value “{editSeeing}” until you pick one.
                             </div>
                           )}
                         </div>
 
-                        <div style={{ fontSize: "0.8rem" }}>
+                        <div style={{ fontSize: fontSize.small }}>
                           <div style={{ marginBottom: "0.3rem" }}>Transparency</div>
                           <SegmentedControl
                             options={QUALITY_OPTIONS}
@@ -1677,13 +2039,13 @@ async function handleDeleteSession(id: number) {
                             onChange={(v) => setEditTransparency(v ?? "")}
                           />
                           {editTransparency && !QUALITY_OPTIONS.includes(editTransparency.toLowerCase()) && (
-                            <div style={{ fontSize: "0.75rem", color: "#9ca3af", marginTop: "0.25rem" }}>
+                            <div style={{ fontSize: fontSize.small, color: "#9ca3af", marginTop: "0.25rem" }}>
                               Keeping the earlier value “{editTransparency}” until you pick one.
                             </div>
                           )}
                         </div>
 
-                        <div style={{ fontSize: "0.8rem" }}>
+                        <div style={{ fontSize: fontSize.small }}>
                           <div style={{ marginBottom: "0.3rem" }}>Rating</div>
                           <StarRating
                             value={editRating === "" ? null : editRating}
@@ -1730,6 +2092,18 @@ async function handleDeleteSession(id: number) {
                           <span style={statLabelStyle}>Rating</span>
                           <StarRating value={log.rating ?? null} readOnly size="0.95rem" />
                         </div>
+                        {log.equipment && (
+                          <div style={{ ...statChipStyle, gridColumn: "1 / -1" }}>
+                            <span style={statLabelStyle}>Equipment</span>
+                            <span style={statValueStyle}>{log.equipment}</span>
+                          </div>
+                        )}
+                        {log.exposure && (
+                          <div style={{ ...statChipStyle, gridColumn: "1 / -1" }}>
+                            <span style={statLabelStyle}>Exposure</span>
+                            <span style={statValueStyle}>{log.exposure}</span>
+                          </div>
+                        )}
                       </div>
 
                       <button
@@ -1740,6 +2114,8 @@ async function handleDeleteSession(id: number) {
                           setEditSeeing(log.seeing ?? "");
                           setEditTransparency(log.transparency ?? "");
                           setEditRating(log.rating ?? "");
+                          setEditEquipment(log.equipment ?? "");
+                          setEditExposure(log.exposure ?? "");
                         }}
                         style={{ ...btnSecondarySm, marginTop: "0.6rem" }}
                       >
@@ -1755,8 +2131,22 @@ async function handleDeleteSession(id: number) {
         </div>
       </div>
     </section>
-  )}
-    </>
+  ) : (
+    <section className="session-detail session-detail-empty" style={cardStyle}>
+      <div style={{ maxWidth: "24rem", textAlign: "center" }}>
+        <h3 style={{ fontSize: fontSize.section, margin: 0 }}>Select a session</h3>
+        <p style={{ fontSize: fontSize.body, color: textColor.secondary, margin: "0.45rem 0 0" }}>
+          Choose a session to see its planned weather and observation logs.
+        </p>
+      </div>
+    </section>
+  );
+
+  const sessionsView = (
+    <div className={`session-workspace${selectedSessionId ? " has-selection" : ""}`}>
+      {sessionListPanel}
+      {sessionDetailPanel}
+    </div>
   );
 
   return (

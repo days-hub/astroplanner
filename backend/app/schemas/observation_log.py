@@ -7,6 +7,8 @@ class ObservationLogBase(BaseModel):
     seeing: Optional[str] = None
     transparency: Optional[str] = None
     rating: Optional[int] = None
+    equipment: Optional[str] = None
+    exposure: Optional[str] = None
 
 
 class ObservationLogCreate(ObservationLogBase):
@@ -19,6 +21,8 @@ class ObservationLogUpdate(BaseModel):
     seeing: Optional[str] = None
     transparency: Optional[str] = None
     rating: Optional[int] = None
+    equipment: Optional[str] = None
+    exposure: Optional[str] = None
 
 
 class ObservationLogRead(ObservationLogBase):

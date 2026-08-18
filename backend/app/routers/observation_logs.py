@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -43,13 +44,33 @@ def create_log(
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
 
+    scheduled_start = session.scheduled_start
+    if scheduled_start.tzinfo is None:
+        scheduled_start = scheduled_start.replace(tzinfo=timezone.utc)
+    else:
+        scheduled_start = scheduled_start.astimezone(timezone.utc)
+    if scheduled_start > datetime.now(timezone.utc):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Observation logs are available when the session begins",
+        )
+    if session.status == "cancelled":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Cancelled sessions cannot receive observation logs",
+        )
+
     log = ObservationLog(
         session_id=session.id,
         notes=log_in.notes,
         seeing=log_in.seeing,
         transparency=log_in.transparency,
         rating=log_in.rating,
+        equipment=log_in.equipment,
+        exposure=log_in.exposure,
     )
+    if session.status == "planned":
+        session.status = "completed"
     db.add(log)
     db.commit()
     db.refresh(log)

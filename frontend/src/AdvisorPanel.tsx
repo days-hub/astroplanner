@@ -107,7 +107,7 @@ const answerStyle: React.CSSProperties = {
 };
 
 const dataStyle: React.CSSProperties = {
-  fontSize: "0.72rem",
+  fontSize: fontSize.small,
   lineHeight: 1.4,
   whiteSpace: "pre",
   overflowX: "auto",
@@ -251,7 +251,7 @@ export default function AdvisorPanel({
               onClick={(e) => ask(e, p)}
               style={{
                 ...btnSecondarySm,
-                fontSize: "0.78rem",
+                fontSize: fontSize.small,
                 color: text.secondary,
               }}
             >
@@ -262,7 +262,7 @@ export default function AdvisorPanel({
       )}
 
       {error && (
-        <div style={{ color: "#fca5a5", fontSize: "0.85rem", marginTop: "0.6rem" }}>{error}</div>
+        <div style={{ color: "#fca5a5", fontSize: fontSize.small, marginTop: "0.6rem" }}>{error}</div>
       )}
 
       {result && (

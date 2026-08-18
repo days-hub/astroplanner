@@ -244,7 +244,7 @@ export default function OutlookPanel({
                       style={{
                         marginLeft: "0.35rem",
                         ...pillShape,
-                        fontSize: "0.62rem",
+                        fontSize: fontSize.small,
                         fontWeight: 700,
                         letterSpacing: "0.06em",
                         textTransform: "uppercase",

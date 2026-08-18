@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import SpaceBackground from "./SpaceBackground";
 import api, { apiErrorMessage, setAuthToken } from "./api";
 import { RocketIcon, TelescopeIcon } from "./icons";
-import { btnPrimary, btnSecondary, line } from "./theme";
+import { btnPrimary, btnSecondary, fontSize, line } from "./theme";
 const loginPageStyle: React.CSSProperties = {
   minHeight: "100vh",
   display: "flex",
@@ -47,7 +47,7 @@ const subtitleStyle: React.CSSProperties = {
 
 const labelStyle: React.CSSProperties = {
   display: "block",
-  fontSize: "0.85rem",
+  fontSize: fontSize.small,
   fontWeight: 500,
   marginBottom: "0.25rem",
 };
@@ -90,7 +90,7 @@ const signInLinkStyle: React.CSSProperties = {
   border: "none",
   padding: 0,
   color: "#9ca3af",
-  fontSize: "0.85rem",
+  fontSize: fontSize.small,
   textDecoration: "underline",
   textUnderlineOffset: "0.2em",
   cursor: "pointer",
@@ -210,7 +210,7 @@ export default function LoginPage({ onLogin, onGoToRegister }: Props) {
             borderRadius: 9999,
             background: "rgba(15,118,110,0.2)",
             color: "#6ee7b7",
-            fontSize: "0.7rem",
+            fontSize: fontSize.small,
             textTransform: "uppercase",
             letterSpacing: "0.12em",
             marginBottom: "0.75rem",
@@ -252,7 +252,7 @@ export default function LoginPage({ onLogin, onGoToRegister }: Props) {
             <p
               style={{
                 color: "#fca5a5",
-                fontSize: "0.85rem",
+                fontSize: fontSize.small,
                 marginTop: "0.5rem",
                 marginBottom: 0,
                 textAlign: "center",
@@ -313,7 +313,7 @@ export default function LoginPage({ onLogin, onGoToRegister }: Props) {
             <div
               style={{
                 color: "#fca5a5",
-                fontSize: "0.85rem",
+                fontSize: fontSize.small,
                 marginTop: "0.25rem",
               }}
             >

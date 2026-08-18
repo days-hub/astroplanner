@@ -3,7 +3,7 @@
 // Small structured-input controls for observation logs: tap-once quality
 // segments and a star rating, replacing free-text fields.
 import type React from "react";
-import { line, pillShape, surface, text } from "./theme";
+import { fontSize, line, pillShape, surface, text } from "./theme";
 
 export function SegmentedControl({
   options,
@@ -29,7 +29,7 @@ export function SegmentedControl({
               // outline is spent on which segment is chosen.
               ...pillShape,
               padding: "0.3rem 0.7rem",
-              fontSize: "0.8rem",
+              fontSize: fontSize.small,
               cursor: "pointer",
               border: selected ? line.focus : "1px solid transparent",
               background: selected ? "rgba(59,130,246,0.22)" : surface.inset,

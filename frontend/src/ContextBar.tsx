@@ -71,7 +71,7 @@ export default function ContextBar({
     forecasts.find((f) => f.location_id === id)?.cloud_cover_percent;
 
   return (
-    <div style={barStyle}>
+    <div className="context-bar" style={barStyle}>
       {/* Two labelled groups rather than one run of controls: location leads,
           and the night carries its timezone so the zone reads as belonging to
           the date rather than floating at the end of the bar. */}
@@ -123,7 +123,7 @@ export default function ContextBar({
           <span style={{ fontSize: fontSize.body, color: text.secondary }}>
             {prettyDate(dateStr)}
           </span>
-          <span style={{ fontSize: "0.72rem", color: text.muted }}>({tz})</span>
+          <span style={{ fontSize: fontSize.small, color: text.muted }}>({tz})</span>
         </div>
       </div>
     </div>

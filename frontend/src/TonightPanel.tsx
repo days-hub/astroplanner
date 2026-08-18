@@ -5,7 +5,7 @@
 // Hierarchy is deliberate — verdict and observing window first, altitudes
 // and bearings second. Location and date come from the page context bar.
 import type React from "react";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import api from "./api";
 import AdvisorPanel from "./AdvisorPanel";
 import CloudTimeline, { type CloudPoint } from "./CloudTimeline";
@@ -18,6 +18,7 @@ import {
 } from "./icons";
 import {
   btnPrimarySm,
+  btnSecondarySm,
   cardFeature,
   fontSize,
   inset,
@@ -31,8 +32,10 @@ type Suitability = "good" | "fair" | "poor" | "very_poor";
 type RatedTarget = {
   name: string;
   kind: "planet" | "moon" | "dso" | "star";
+  category: "planet" | "moon" | "galaxy" | "nebula" | "cluster" | "star";
   altitude_deg: number;
   azimuth_deg: number;
+  score: number;
   visible: boolean;
   reason?: string | null;
   suitability?: Suitability | null;
@@ -63,6 +66,7 @@ type Recommendation = {
 type TonightSummary = {
   night: NightInfo;
   sample_time_local: string;
+  sample_is_now: boolean;
   targets: RatedTarget[];
   hourly_cloud: CloudPoint[];
   clear_from_local?: string | null;
@@ -100,6 +104,32 @@ const SUITABILITY_LABELS: Record<Suitability, { label: string; color: string }> 
   very_poor: { label: "Very poor", color: "#f87171" },
 };
 
+type TargetGroup = "all" | "solar-system" | "galaxy" | "nebula" | "cluster";
+
+const TARGET_GROUPS: { id: TargetGroup; label: string }[] = [
+  { id: "all", label: "All" },
+  { id: "solar-system", label: "Solar system" },
+  { id: "galaxy", label: "Galaxies" },
+  { id: "nebula", label: "Nebulae" },
+  { id: "cluster", label: "Star clusters" },
+];
+
+const SUITABILITY_RANK: Record<Suitability, number> = {
+  good: 4,
+  fair: 3,
+  poor: 2,
+  very_poor: 1,
+};
+
+function targetGroup(target: RatedTarget): Exclude<TargetGroup, "all"> {
+  if (target.category === "planet" || target.category === "moon") {
+    return "solar-system";
+  }
+  if (target.category === "galaxy") return "galaxy";
+  if (target.category === "nebula") return "nebula";
+  return "cluster";
+}
+
 function parseApiDate(s: string) {
   const hasTz = /([zZ]|[+-]\d\d:\d\d)$/.test(s);
   return new Date(hasTz ? s : `${s}Z`);
@@ -129,7 +159,11 @@ function fmtLocalInput(s: string) {
 // "Tonight at X" is wrong the moment you look at another night — and the
 // card is the page's headline, so it's the fastest way to lose track of
 // which night you're actually reading. Name the night instead.
-function nightLabel(dateStr: string, tz: string): string {
+function nightLabel(dateStr: string, tz: string, isActiveNow = false): string {
+  // After midnight the active observing night belongs to yesterday's
+  // evening-date, but it is still "Tonight" to the person at the eyepiece.
+  if (isActiveNow) return "Tonight";
+
   let today: string;
   try {
     today = new Intl.DateTimeFormat("en-CA", { timeZone: tz }).format(new Date());
@@ -185,6 +219,8 @@ export default function TonightPanel({
   const [data, setData] = useState<TonightSummary | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [showCatalogue, setShowCatalogue] = useState(false);
+  const [targetGroupFilter, setTargetGroupFilter] = useState<TargetGroup>("all");
 
   useEffect(() => {
     let cancelled = false;
@@ -212,9 +248,32 @@ export default function TonightPanel({
   }, [locationId, dateStr, tz]);
 
   const night = data?.night ?? null;
-  const visible = (data?.targets ?? []).filter((t) => t.visible);
+  const visible = useMemo(
+    () => (data?.targets ?? []).filter((t) => t.visible),
+    [data],
+  );
+  const rankedVisible = useMemo(
+    () => [...visible].sort((a, b) => {
+      const ratingA = a.suitability ? SUITABILITY_RANK[a.suitability] : 0;
+      const ratingB = b.suitability ? SUITABILITY_RANK[b.suitability] : 0;
+      return ratingB - ratingA || b.score - a.score || b.altitude_deg - a.altitude_deg;
+    }),
+    [visible],
+  );
+  const bestTargets = rankedVisible.slice(0, 4);
+  const browsedTargets = rankedVisible.filter(
+    (target) => targetGroupFilter === "all" || targetGroup(target) === targetGroupFilter,
+  );
+  const groupCount = (group: TargetGroup) =>
+    group === "all"
+      ? rankedVisible.length
+      : rankedVisible.filter((target) => targetGroup(target) === group).length;
   const hiddenCount = (data?.targets.length ?? 0) - visible.length;
   const verdict = night?.conditions ? verdictStyles[night.conditions] : null;
+  const isClearAllNight = Boolean(
+    data?.hourly_cloud.length &&
+      data.hourly_cloud.every((point) => Math.round(point.cloud_cover) === 0),
+  );
 
   // If nothing is even fair, say so above the list rather than letting the
   // heading imply these are recommendations.
@@ -245,7 +304,7 @@ export default function TonightPanel({
           letterSpacing: "0.01em",
         }}
       >
-        {nightLabel(dateStr, tz)} at {locationName ?? "your location"}
+        {nightLabel(dateStr, tz, Boolean(data?.sample_is_now))} at {locationName ?? "your location"}
       </h2>
 
       {/* The bottom line, before any of the supporting detail. Everything
@@ -341,9 +400,12 @@ export default function TonightPanel({
         className="col-2"
         style={{
           display: "grid",
-          gridTemplateColumns: "minmax(0, 1.15fr) minmax(0, 1fr)",
+          gridTemplateColumns: isClearAllNight
+            ? "minmax(0, 1fr)"
+            : "minmax(0, 1.15fr) minmax(0, 1fr)",
           gap: "1.5rem",
           alignItems: "start",
+          maxWidth: isClearAllNight ? "52rem" : undefined,
           // The conclusion above is separated from the evidence below by a
           // rule and space, now that a tinted box no longer does that job.
           marginTop: "1.15rem",
@@ -352,17 +414,30 @@ export default function TonightPanel({
         }}
       >
         <div>
-          {night?.conditions_summary && (
-            <div
-              style={{
-                fontSize: fontSize.body,
-                color: text.secondary,
-                marginTop: "0.45rem",
-              }}
-            >
-              {night.conditions_summary}.
-            </div>
-          )}
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "0.85rem",
+              flexWrap: "wrap",
+              marginTop: "0.45rem",
+            }}
+          >
+            {night?.conditions_summary && (
+              <div style={{ fontSize: fontSize.body, color: text.secondary }}>
+                {night.conditions_summary}.
+              </div>
+            )}
+            {isClearAllNight && data && (
+              <CloudTimeline
+                points={data.hourly_cloud}
+                meanPercent={night?.cloud_cover_percent ?? null}
+                trend={data.cloud_trend}
+                clearFrom={data.clear_from_local}
+                clearTo={data.clear_to_local}
+              />
+            )}
+          </div>
 
           {night && (
             <div style={{ marginTop: "0.9rem" }}>
@@ -405,12 +480,14 @@ export default function TonightPanel({
               moonsetLocal={data?.moonset_local}
               moonIllumination={night.moon_illumination}
               moonUpFraction={night.moon_up_fraction}
+              cloudPoints={data?.hourly_cloud ?? []}
+              meanCloudPercent={night.cloud_cover_percent}
               tz={tz}
             />
           )}
         </div>
 
-        {data && data.hourly_cloud.length > 0 && (
+        {data && data.hourly_cloud.length > 0 && !isClearAllNight && (
           <CloudTimeline
             points={data.hourly_cloud}
             meanPercent={night?.cloud_cover_percent ?? null}
@@ -465,8 +542,8 @@ export default function TonightPanel({
 
       {!loading && !error && data && (
         <div style={{ marginTop: "1.2rem" }}>
-          {/* "Visible" not "Top" — these are what's above the horizon, and
-              the rating on each says whether it's worth pointing at. */}
+          {/* Lead with a recommendation, not an inventory. The full catalogue
+              remains one click away and is grouped by object family. */}
           <div
             style={{
               fontSize: fontSize.section,
@@ -474,7 +551,7 @@ export default function TonightPanel({
               marginBottom: "0.15rem",
             }}
           >
-            Visible targets
+            Best right now
           </div>
           <div
             style={{
@@ -483,8 +560,11 @@ export default function TonightPanel({
               marginBottom: "0.6rem",
             }}
           >
-            Above the horizon at {fmtLocalInput(data.sample_time_local)}
-            {night?.dark_start ? ", an hour into full darkness" : ""}
+            {visible.length > 0 && `${Math.min(4, visible.length)} of ${visible.length} visible · `}
+            {data.sample_is_now
+              ? `Right now · ${fmtLocalInput(data.sample_time_local)}`
+              : `Above the horizon at ${fmtLocalInput(data.sample_time_local)}`}
+            {!data.sample_is_now && night?.dark_start ? ", an hour into full darkness" : ""}
             {allPoor ? ". Poor viewing expected." : ""}
           </div>
 
@@ -494,19 +574,14 @@ export default function TonightPanel({
               another night.
             </div>
           ) : (
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: "repeat(auto-fit, minmax(185px, 1fr))",
-                gap: "0.55rem",
-              }}
-            >
-              {visible.map((t) => {
+            <>
+            <div className="target-feature-grid">
+              {bestTargets.map((t) => {
                 const rating = t.suitability
                   ? SUITABILITY_LABELS[t.suitability]
                   : null;
                 return (
-                  <div key={t.name} style={targetCardStyle}>
+                  <div key={t.name} className="target-feature-card" style={targetCardStyle}>
                     <div style={{ display: "flex", alignItems: "flex-start", gap: "0.4rem" }}>
                       {/* No colour override: each glyph carries its own hue,
                           which is the whole point of the duotone set. */}
@@ -549,6 +624,98 @@ export default function TonightPanel({
                 );
               })}
             </div>
+
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: "0.75rem",
+                flexWrap: "wrap",
+                marginTop: "0.85rem",
+              }}
+            >
+              <button
+                type="button"
+                aria-expanded={showCatalogue}
+                onClick={() => setShowCatalogue((open) => !open)}
+                style={btnSecondarySm}
+              >
+                {showCatalogue ? "Hide target catalogue" : `Browse all ${visible.length} visible targets`}
+              </button>
+              <span style={{ fontSize: fontSize.small, color: text.muted }}>
+                Ranked by viewing quality, altitude, and sky position
+              </span>
+            </div>
+
+            {showCatalogue && (
+              <div style={{ marginTop: "0.8rem", paddingTop: "0.8rem", borderTop: line.hairline }}>
+                <div
+                  role="group"
+                  aria-label="Filter visible targets by type"
+                  style={{ display: "flex", gap: "0.4rem", flexWrap: "wrap", marginBottom: "0.65rem" }}
+                >
+                  {TARGET_GROUPS.filter((group) => groupCount(group.id) > 0).map((group) => {
+                    const active = targetGroupFilter === group.id;
+                    return (
+                      <button
+                        key={group.id}
+                        type="button"
+                        aria-pressed={active}
+                        onClick={() => setTargetGroupFilter(group.id)}
+                        style={{
+                          ...btnSecondarySm,
+                          background: active ? "rgba(59,130,246,0.2)" : btnSecondarySm.background,
+                          borderColor: active ? "rgba(96,165,250,0.65)" : undefined,
+                          color: active ? "#dbeafe" : btnSecondarySm.color,
+                        }}
+                      >
+                        {group.label} · {groupCount(group.id)}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                <div className="target-browser-grid">
+                  {browsedTargets.map((target) => {
+                    const rating = target.suitability
+                      ? SUITABILITY_LABELS[target.suitability]
+                      : null;
+                    return (
+                      <div key={target.name} className="target-browser-row">
+                        <span aria-hidden>{KIND_ICONS[target.kind]}</span>
+                        <div style={{ minWidth: 0 }}>
+                          <div
+                            style={{
+                              fontSize: fontSize.body,
+                              fontWeight: 650,
+                              overflow: "hidden",
+                              textOverflow: "ellipsis",
+                              whiteSpace: "nowrap",
+                            }}
+                            title={target.name}
+                          >
+                            {target.name}
+                          </div>
+                          <div style={{ fontSize: fontSize.small, color: text.muted }}>
+                            {rating && <span style={{ color: rating.color }}>{rating.label} · </span>}
+                            {Math.round(target.altitude_deg)}° · {degToCompass(target.azimuth_deg)}
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => onPlan(target.name, data.sample_time_local)}
+                          style={{ ...btnSecondarySm, justifySelf: "end" }}
+                        >
+                          Plan
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+            </>
           )}
 
           {hiddenCount > 0 && (

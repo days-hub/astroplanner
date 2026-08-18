@@ -1,6 +1,8 @@
 # Background image credits
 
-All images were sourced via Wikimedia Commons at reduced resolution.
+The exact-object images below were sourced via Wikimedia Commons at reduced
+resolution. Decorative family backgrounds are listed separately and must not
+be presented as scientific imagery of a named object.
 
 | File | Subject | Credit / Source | License |
 |------|---------|-----------------|---------|
@@ -18,3 +20,15 @@ All images were sourced via Wikimedia Commons at reduced resolution.
 
 Exact source pages: search the filename (last column of Credit) on
 https://commons.wikimedia.org — each file page lists the full license text.
+
+## Decorative generated backgrounds
+
+Generated locally with OpenAI image generation for AstroPlanner. These are
+visual families used when no exact telescope photograph is bundled.
+
+| File | Visual family |
+|------|---------------|
+| deep-sky-fallback.webp | General deep sky |
+| galaxy-family.webp | Spiral galaxies |
+| planetary-nebula-family.webp | Planetary nebulae |
+| cluster-family.webp | Globular and open clusters |

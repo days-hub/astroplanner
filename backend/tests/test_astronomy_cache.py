@@ -15,8 +15,10 @@ from app.routers import targets
 from app.routers.targets import (
     _moon_up_fraction,
     _moonset_after,
+    _target_sample_time,
     compute_night_info,
     compute_visible_targets,
+    resolve_observing_context,
 )
 
 ZONE = ZoneInfo("America/Toronto")
@@ -51,6 +53,20 @@ class TestResultsAreUnchanged:
         a = [t.model_dump() for t in compute_visible_targets(LAT, LON, START)]
         b = [t.model_dump() for t in compute_visible_targets(LAT, LON, START)]
         assert a == b and a, "expected a stable, non-empty target list"
+
+    def test_catalogue_has_a_real_seasonal_selection(self):
+        targets = compute_visible_targets(LAT, LON, START)
+        names = {t.name for t in targets}
+        assert len(names) >= 40
+        assert {
+            "Hercules Cluster (M13)",
+            "Ring Nebula (M57)",
+            "Whirlpool Galaxy (M51)",
+            "North America Nebula (NGC 7000)",
+        } <= names
+        assert {t.category for t in targets} >= {
+            "planet", "moon", "galaxy", "nebula", "cluster"
+        }
 
     def test_different_places_are_not_confused(self):
         toronto = compute_night_info(LAT, LON, NIGHT, "America/Toronto", ZONE)
@@ -98,6 +114,51 @@ class TestCacheCannotBePoisoned:
         again = compute_visible_targets(LAT, LON, START)
         assert len(again) == count
         assert "clobbered" not in [t.name for t in again]
+
+
+class TestObservingNightBoundary:
+    def test_after_midnight_stays_on_previous_evening_until_darkness_ends(self):
+        night = compute_night_info(
+            LAT, LON, "2026-08-01", "America/Toronto", ZONE
+        )
+        assert night.dark_end is not None
+        context = resolve_observing_context(
+            LAT,
+            LON,
+            "America/Toronto",
+            ZONE,
+            night.dark_end - timedelta(minutes=30),
+        )
+        assert context.date_local == "2026-08-01"
+        assert context.phase == "active"
+
+        sample, is_now = _target_sample_time(
+            night, ZONE, night.dark_end - timedelta(minutes=30)
+        )
+        assert is_now is True
+        assert sample == (night.dark_end - timedelta(minutes=30)).replace(
+            second=0, microsecond=0
+        )
+
+    def test_context_advances_to_coming_evening_after_darkness_ends(self):
+        night = compute_night_info(
+            LAT, LON, "2026-08-01", "America/Toronto", ZONE
+        )
+        assert night.dark_end is not None
+        context = resolve_observing_context(
+            LAT,
+            LON,
+            "America/Toronto",
+            ZONE,
+            night.dark_end + timedelta(minutes=1),
+        )
+        assert context.date_local == "2026-08-02"
+        assert context.phase == "upcoming"
+
+        _, is_now = _target_sample_time(
+            night, ZONE, night.dark_end + timedelta(minutes=1)
+        )
+        assert is_now is False
 
 
 class TestCacheIsBounded:

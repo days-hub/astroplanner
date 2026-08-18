@@ -1,7 +1,8 @@
 // src/SpaceBackground.tsx
 //
-// Procedural starfield (canvas) + per-target NASA/ESA still.
-// Replaces the old 17 GB video-based background with ~4 MB of assets.
+// Procedural starfield (canvas) + per-target or object-family still.
+// Exact telescope imagery is preferred; generated family images cover the
+// larger catalogue without pretending each one is a scientific reference.
 // Image credits: src/assets/backgrounds/ATTRIBUTION.md
 import { useEffect, useMemo, useRef } from "react";
 
@@ -16,6 +17,10 @@ import neptuneImg from "./assets/backgrounds/neptune.png";
 import orionImg from "./assets/backgrounds/orion.jpg";
 import andromedaImg from "./assets/backgrounds/andromeda.jpg";
 import pleiadesImg from "./assets/backgrounds/pleiades.jpg";
+import deepSkyImg from "./assets/backgrounds/deep-sky-fallback.webp";
+import galaxyFamilyImg from "./assets/backgrounds/galaxy-family.webp";
+import planetaryNebulaFamilyImg from "./assets/backgrounds/planetary-nebula-family.webp";
+import clusterFamilyImg from "./assets/backgrounds/cluster-family.webp";
 
 type Props = {
   targetName?: string | null;
@@ -39,6 +44,10 @@ const THEMES: Record<string, Theme> = {
   orion_nebula: { image: orionImg, tint: "#ec4899" },
   andromeda: { image: andromedaImg, tint: "#8b5cf6" },
   pleiades: { image: pleiadesImg, tint: "#38bdf8" },
+  galaxy_family: { image: galaxyFamilyImg, tint: "#8b5cf6" },
+  planetary_nebula_family: { image: planetaryNebulaFamilyImg, tint: "#22d3ee" },
+  cluster_family: { image: clusterFamilyImg, tint: "#fbbf24" },
+  deep_sky_family: { image: deepSkyImg, tint: "#a855f7" },
 };
 
 function targetToKey(targetName?: string | null): string {
@@ -56,6 +65,19 @@ function targetToKey(targetName?: string | null): string {
   if (s.includes("orion nebula") || s.includes("m42")) return "orion_nebula";
   if (s.includes("andromeda") || s.includes("m31")) return "andromeda";
   if (s.includes("pleiades") || s.includes("m45")) return "pleiades";
+
+  // Family backgrounds are decorative, not labelled as exact telescope
+  // plates. They give every expanded-catalogue target a related visual while
+  // the exact Orion/Andromeda/Pleiades images above continue to win.
+  if (s.includes("galaxy")) return "galaxy_family";
+  if (
+    s.includes("ring nebula") ||
+    s.includes("dumbbell") ||
+    s.includes("owl nebula") ||
+    s.includes("blue snowball")
+  ) return "planetary_nebula_family";
+  if (s.includes("cluster")) return "cluster_family";
+  if (s.includes("nebula")) return "deep_sky_family";
 
   return "global";
 }
@@ -291,6 +313,22 @@ export default function SpaceBackground({
         ref={canvasRef}
         style={{ position: "absolute", inset: 0, width: "100%", height: "100%" }}
       />
+
+      {/* Keep the photograph and brighter stars present in the margins, but
+          quiet the portion directly behind the app's working column. This
+          sits above the canvas so moving stars cannot compete with labels or
+          card edges; the broad radial fade avoids a visible rectangular
+          strip on wide screens. */}
+      {theme.image && (
+        <div
+          style={{
+            position: "absolute",
+            inset: 0,
+            background:
+              "radial-gradient(ellipse 44% 115% at 50% 38%, rgba(2,6,23,0.52) 0%, rgba(2,6,23,0.4) 55%, rgba(2,6,23,0.08) 88%, rgba(2,6,23,0) 100%)",
+          }}
+        />
+      )}
     </div>
   );
 }

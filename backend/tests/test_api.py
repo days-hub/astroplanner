@@ -208,6 +208,80 @@ class TestSessions:
         )
         assert r.status_code == 400
 
+    def test_session_detail_fields_round_trip(self, client, make_user, make_location, make_session):
+        headers = make_user()
+        loc = make_location(headers)
+        session = make_session(
+            headers,
+            loc["id"],
+            preparation_notes="Charge batteries and pack the O-III filter.",
+        )
+        assert session["preparation_notes"].startswith("Charge batteries")
+
+        updated = client.patch(
+            f"/sessions/{session['id']}",
+            json={"preparation_notes": "Bring dew heaters."},
+            headers=headers,
+        )
+        assert updated.status_code == 200
+        assert updated.json()["preparation_notes"] == "Bring dew heaters."
+
+    def test_future_session_rejects_observation_log(self, client, make_user, make_location, make_session):
+        headers = make_user()
+        loc = make_location(headers)
+        session = make_session(
+            headers,
+            loc["id"],
+            scheduled_start_local="2099-08-01T23:00",
+        )
+        response = client.post(
+            f"/sessions/{session['id']}/logs/",
+            json={"notes": "Too early"},
+            headers=headers,
+        )
+        assert response.status_code == 409
+        assert "begins" in response.json()["detail"]
+
+    def test_log_completes_started_session_and_keeps_equipment(self, client, make_user, make_location, make_session):
+        headers = make_user()
+        loc = make_location(headers)
+        session = make_session(
+            headers,
+            loc["id"],
+            scheduled_start_local="2020-08-01T23:00",
+        )
+        response = client.post(
+            f"/sessions/{session['id']}/logs/",
+            json={
+                "notes": "Dust lanes were visible.",
+                "seeing": "good",
+                "transparency": "excellent",
+                "rating": 5,
+                "equipment": "8-inch Dobsonian",
+                "exposure": "Visual · 82×",
+            },
+            headers=headers,
+        )
+        assert response.status_code == 201, response.text
+        assert response.json()["equipment"] == "8-inch Dobsonian"
+        assert response.json()["exposure"] == "Visual · 82×"
+        refreshed = client.get(f"/sessions/{session['id']}", headers=headers)
+        assert refreshed.json()["status"] == "completed"
+
+    def test_observing_context_uses_saved_site(self, client, make_user, make_location):
+        headers = make_user()
+        loc = make_location(headers)
+        r = client.get(
+            "/targets/observing-context",
+            params={"location_id": loc["id"], "tz": "America/Toronto"},
+            headers=headers,
+        )
+        assert r.status_code == 200
+        data = r.json()
+        assert data["phase"] in ("active", "upcoming")
+        assert len(data["date_local"]) == 10
+        assert data["now_local"].startswith(data["date_local"][:4])
+
     def test_night_info_isolated_per_user(self, client, make_user, make_location):
         alice = make_user()
         bob = make_user()

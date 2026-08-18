@@ -76,17 +76,54 @@ PLANETS = {
     "Neptune": eph["neptune barycenter"],
 }
 
-# Example fixed targets; expand as you like
+# A practical northern-sky starter catalogue. Coordinates are J2000 and only
+# need arc-minute precision for the altitude/azimuth guidance shown here.
+# Keeping the catalogue local makes visibility deterministic and available
+# offline; the former three-object list made most seasons look nearly empty.
 FIXED_TARGETS = [
-    # name, ra_hours, dec_degrees
-    ("Orion Nebula (M42)", 5 + 35/60, -(5 + 23/60)),
-    ("Andromeda Galaxy (M31)", 0 + 42/60, 41 + 16/60),
-    ("Pleiades (M45)", 3 + 47/60, 24 + 7/60),
+    # name, category, right ascension (hours), declination (degrees)
+    ("Andromeda Galaxy (M31)", "galaxy", 0.712, 41.269),
+    ("Triangulum Galaxy (M33)", "galaxy", 1.565, 30.660),
+    ("Double Cluster (NGC 869/884)", "cluster", 2.333, 57.150),
+    ("Pleiades (M45)", "cluster", 3.792, 24.117),
+    ("Crab Nebula (M1)", "nebula", 5.575, 22.017),
+    ("Orion Nebula (M42)", "nebula", 5.588, -5.392),
+    ("M35 Open Cluster", "cluster", 6.148, 24.333),
+    ("Beehive Cluster (M44)", "cluster", 8.668, 19.983),
+    ("Bode's Galaxy (M81)", "galaxy", 9.927, 69.067),
+    ("Cigar Galaxy (M82)", "galaxy", 9.932, 69.683),
+    ("Owl Nebula (M97)", "nebula", 11.247, 55.017),
+    ("Messier 106 Galaxy", "galaxy", 12.317, 47.300),
+    ("Sombrero Galaxy (M104)", "galaxy", 12.667, -11.617),
+    ("Black Eye Galaxy (M64)", "galaxy", 12.945, 21.683),
+    ("Sunflower Galaxy (M63)", "galaxy", 13.263, 42.033),
+    ("Whirlpool Galaxy (M51)", "galaxy", 13.498, 47.200),
+    ("Messier 3 Cluster", "cluster", 13.703, 28.383),
+    ("Pinwheel Galaxy (M101)", "galaxy", 14.053, 54.350),
+    ("Messier 5 Cluster", "cluster", 15.310, 2.083),
+    ("Hercules Cluster (M13)", "cluster", 16.695, 36.467),
+    ("Messier 12 Cluster", "cluster", 16.787, -1.950),
+    ("Messier 10 Cluster", "cluster", 16.952, -4.100),
+    ("Messier 92 Cluster", "cluster", 17.285, 43.133),
+    ("Trifid Nebula (M20)", "nebula", 18.038, -23.033),
+    ("Lagoon Nebula (M8)", "nebula", 18.063, -24.383),
+    ("Eagle Nebula (M16)", "nebula", 18.313, -13.783),
+    ("Omega Nebula (M17)", "nebula", 18.347, -16.183),
+    ("Messier 22 Cluster", "cluster", 18.607, -23.900),
+    ("Wild Duck Cluster (M11)", "cluster", 18.852, -6.267),
+    ("Ring Nebula (M57)", "nebula", 18.893, 33.033),
+    ("Dumbbell Nebula (M27)", "nebula", 19.993, 22.717),
+    ("Veil Nebula (NGC 6960)", "nebula", 20.762, 30.717),
+    ("North America Nebula (NGC 7000)", "nebula", 20.980, 44.333),
+    ("Messier 15 Cluster", "cluster", 21.500, 12.167),
+    ("Messier 2 Cluster", "cluster", 21.558, -0.817),
+    ("Blue Snowball Nebula (NGC 7662)", "nebula", 23.432, 42.533),
 ]
 
 class VisibleTarget(BaseModel):
     name: str
     kind: Literal["planet", "moon", "dso", "star"]
+    category: Literal["planet", "moon", "galaxy", "nebula", "cluster", "star"]
     altitude_deg: float
     azimuth_deg: float
     sun_altitude_deg: float
@@ -138,6 +175,7 @@ class TonightSummary(BaseModel):
     and had no forecast to rate targets against."""
     night: NightInfo
     sample_time_local: str  # "YYYY-MM-DDTHH:mm", when targets were computed
+    sample_is_now: bool = False
     targets: List[RatedTarget]
     hourly_cloud: List[CloudPoint]
     clear_from_local: Optional[str] = None
@@ -150,6 +188,14 @@ class TonightSummary(BaseModel):
     focus: Optional[str] = None
     cloud_trend: Optional[str] = None  # plain-language shape of the night
     recommendation: Optional[Recommendation] = None
+
+
+class ObservingContext(BaseModel):
+    """Which evening-date owns the user's current observing context."""
+    date_local: str
+    phase: Literal["active", "upcoming"]
+    now_local: str
+    rollover_local: Optional[str] = None
 
 
 class NightOutlook(BaseModel):
@@ -294,6 +340,30 @@ def _night_window(night: NightInfo, zone: ZoneInfo) -> tuple[datetime, datetime]
     return start, end
 
 
+def _target_sample_time(
+    night: NightInfo,
+    zone: ZoneInfo,
+    now_utc: Optional[datetime] = None,
+) -> tuple[datetime, bool]:
+    """Choose now inside an active window, otherwise a representative time."""
+    current = _to_utc(now_utc or datetime.now(timezone.utc)).replace(
+        second=0, microsecond=0
+    )
+    window_start, window_end = _night_window(night, zone)
+    if window_start <= current < window_end:
+        return current, True
+
+    if night.dark_start:
+        start = night.dark_start
+        end = night.dark_end or start + timedelta(hours=2)
+        return min(start + timedelta(hours=1), start + (end - start) / 2), False
+
+    fallback = datetime.fromisoformat(night.date).replace(
+        hour=22, minute=0, tzinfo=zone
+    ).astimezone(timezone.utc)
+    return fallback, False
+
+
 async def add_conditions(
     night: NightInfo, latitude: float, longitude: float, zone: ZoneInfo
 ) -> list[dict]:
@@ -400,6 +470,82 @@ def _night_info_cached(
         dark_end=dark_end,
         sunrise=sunrise,
         moon_illumination=moon_frac,
+    )
+
+
+def resolve_observing_context(
+    latitude: float,
+    longitude: float,
+    tz_name: str,
+    zone: ZoneInfo,
+    now_utc: Optional[datetime] = None,
+) -> ObservingContext:
+    """Resolve the evening-date that owns *now* at an observing site.
+
+    Calendar midnight is not an astronomical boundary. If it is after
+    midnight but the previous evening's dark window is still open, that
+    previous date remains "tonight". Once astronomical darkness ends, the
+    context advances to the coming evening.
+    """
+    current = _to_utc(now_utc or datetime.now(timezone.utc))
+    local_day = current.astimezone(zone).date()
+
+    for candidate in (local_day - timedelta(days=1), local_day):
+        night = compute_night_info(
+            latitude, longitude, candidate.isoformat(), tz_name, zone
+        )
+        window_start, window_end = _night_window(night, zone)
+        if window_start <= current < window_end:
+            return ObservingContext(
+                date_local=candidate.isoformat(),
+                phase="active",
+                now_local=current.astimezone(zone).strftime("%Y-%m-%dT%H:%M"),
+                rollover_local=window_end.astimezone(zone).strftime("%Y-%m-%dT%H:%M"),
+            )
+
+    coming = compute_night_info(
+        latitude, longitude, local_day.isoformat(), tz_name, zone
+    )
+    _, window_end = _night_window(coming, zone)
+    return ObservingContext(
+        date_local=local_day.isoformat(),
+        phase="upcoming",
+        now_local=current.astimezone(zone).strftime("%Y-%m-%dT%H:%M"),
+        rollover_local=window_end.astimezone(zone).strftime("%Y-%m-%dT%H:%M"),
+    )
+
+
+@router.get("/observing-context", response_model=ObservingContext)
+def observing_context(
+    location_id: int,
+    tz: Optional[str] = None,
+    db: DBSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Return the current or upcoming observing night for a saved site."""
+    loc = (
+        db.query(Location)
+        .filter(Location.id == location_id, Location.owner_id == current_user.id)
+        .first()
+    )
+    if not loc:
+        raise HTTPException(status_code=404, detail="Location not found")
+    if loc.latitude is None or loc.longitude is None:
+        raise HTTPException(
+            status_code=400,
+            detail="Location has no coordinates; set latitude/longitude first",
+        )
+
+    tz_name = tz or loc.timezone
+    if not tz_name:
+        raise HTTPException(status_code=400, detail="Timezone required")
+    try:
+        zone = ZoneInfo(tz_name)
+    except ZoneInfoNotFoundError:
+        raise HTTPException(status_code=400, detail="Invalid timezone")
+
+    return resolve_observing_context(
+        loc.latitude, loc.longitude, tz_name, zone
     )
 
 
@@ -850,16 +996,10 @@ async def tonight_summary(
     night = compute_night_info(loc.latitude, loc.longitude, date_local, tz_name, zone)
     rows = await add_conditions(night, loc.latitude, loc.longitude, zone)
 
-    # Show the sky an hour into full darkness (or mid-window if that's later
-    # than the middle), falling back to 10pm when the night never gets dark.
-    if night.dark_start:
-        start = night.dark_start
-        end = night.dark_end or start + timedelta(hours=2)
-        sample_utc = min(start + timedelta(hours=1), start + (end - start) / 2)
-    else:
-        sample_utc = datetime.fromisoformat(date_local).replace(
-            hour=22, minute=0, tzinfo=zone
-        ).astimezone(timezone.utc)
+    # During the active observing window, answer the most useful question:
+    # what is actually up right now? For a future or past night, retain the
+    # representative one-hour-into-darkness snapshot.
+    sample_utc, sample_is_now = _target_sample_time(night, zone)
 
     rated: List[RatedTarget] = []
     for t in compute_visible_targets(loc.latitude, loc.longitude, sample_utc):
@@ -888,6 +1028,7 @@ async def tonight_summary(
     summary = TonightSummary(
         night=night,
         sample_time_local=sample_utc.astimezone(zone).strftime("%Y-%m-%dT%H:%M"),
+        sample_is_now=sample_is_now,
         targets=rated,
         hourly_cloud=hourly,
     )
@@ -1100,6 +1241,7 @@ def _visible_targets_cached(
             VisibleTarget(
                 name=name,
                 kind="planet",
+                category="planet",
                 altitude_deg=alt_deg,
                 azimuth_deg=az_deg,
                 sun_altitude_deg=sun_alt_deg,
@@ -1126,6 +1268,7 @@ def _visible_targets_cached(
         VisibleTarget(
             name="Moon",
             kind="moon",
+            category="moon",
             altitude_deg=moon_alt_deg,
             azimuth_deg=moon_az_deg,
             sun_altitude_deg=sun_alt_deg,
@@ -1137,7 +1280,7 @@ def _visible_targets_cached(
     )
 
     # ---- Fixed DSOs (RA/Dec) ----
-    for name, ra_h, dec_d in FIXED_TARGETS:
+    for name, category, ra_h, dec_d in FIXED_TARGETS:
         star = Star(ra_hours=ra_h, dec_degrees=dec_d)
         app = topo.at(t).observe(star).apparent()
         alt, az, _ = app.altaz()
@@ -1157,6 +1300,7 @@ def _visible_targets_cached(
             VisibleTarget(
                 name=name,
                 kind="dso",
+                category=category,
                 altitude_deg=alt_deg,
                 azimuth_deg=az_deg,
                 sun_altitude_deg=sun_alt_deg,
