@@ -189,6 +189,17 @@ class TestTheReasonReadsLikeEnglish:
         c = choose_location(rows, current_id=1)
         assert "a 3-hour clear window" in c["reason"], c["reason"]
 
+    def test_a_real_days_drive_is_still_a_drive(self):
+        # Toronto to Manitoulin is 322 km. An earlier 300 km threshold called
+        # that "the distance" while the headline above it said "the drive".
+        rows = [
+            site(2, "Manitoulin Island", 150.0, 5.0, 0, 322),
+            site(1, "Toronto", 140.0, 4.6, 0, 0),
+        ]
+        c = choose_location(rows, current_id=1)
+        assert c["status"] == "stay_nearby"
+        assert "for the drive" in c["reason"], c["reason"]
+
     def test_a_short_hop_is_called_a_drive(self):
         rows = [
             site(2, "Torrance Barrens", 135.0, 3.9, 20, 140),

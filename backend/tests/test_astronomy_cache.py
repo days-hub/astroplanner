@@ -180,3 +180,61 @@ class TestCacheIsBounded:
         info = targets._night_info_cached.cache_info()
         assert info.misses == 1, info
         assert info.hits == 4, info
+
+
+class TestPeakAltitude:
+    """Rating a target at one instant judges the whole night by its first
+    hour. Saturn sits about 10 degrees up in the east at 11pm on 2026-08-20
+    from Toronto and climbs to nearly 50 by 4am; calling that "poor" and
+    stopping there is the bug these guard against.
+    """
+
+    def _peaks(self):
+        night = compute_night_info(LAT, LON, "2026-08-20", "America/Toronto", ZONE)
+        start, end = targets._night_window(night, ZONE)
+        return dict(
+            (name, (altitude, when))
+            for name, altitude, when in targets._target_peaks_cached(
+                LAT, LON, start, end
+            )
+        ), night
+
+    def test_a_rising_planet_peaks_far_above_its_evening_altitude(self):
+        peaks, night = self._peaks()
+        sample_utc, _ = _target_sample_time(night, ZONE)
+        at_sample = {
+            t.name: t.altitude_deg
+            for t in compute_visible_targets(LAT, LON, sample_utc)
+        }
+        for name in ("Saturn", "Neptune"):
+            peak_altitude, peak_when = peaks[name]
+            assert peak_altitude > at_sample[name] + 20, (
+                f"{name} peaks at {peak_altitude:.1f} deg but sits at "
+                f"{at_sample[name]:.1f} deg at the sample time"
+            )
+            assert peak_when > sample_utc, f"{name} should peak later in the night"
+
+    def test_a_setting_target_does_not_claim_a_later_peak(self):
+        # The Moon sets before midnight, so its best moment is the start of
+        # the window. A "rises to" note here would be plainly wrong.
+        peaks, night = self._peaks()
+        window_start, _ = targets._night_window(night, ZONE)
+        _peak_altitude, peak_when = peaks["Moon"]
+        assert peak_when == window_start
+
+    def test_every_target_gets_a_peak(self):
+        peaks, _ = self._peaks()
+        assert "Moon" in peaks
+        assert "Saturn" in peaks
+        for name, _category, _ra, _dec in targets.FIXED_TARGETS:
+            assert name in peaks, f"{name} has no peak altitude"
+
+    def test_peaks_are_cached_and_immutable(self):
+        night = compute_night_info(LAT, LON, "2026-08-20", "America/Toronto", ZONE)
+        start, end = targets._night_window(night, ZONE)
+        first = targets._target_peaks_cached(LAT, LON, start, end)
+        second = targets._target_peaks_cached(LAT, LON, start, end)
+        assert first == second
+        # Tuples all the way down: a caller cannot corrupt the cached answer.
+        assert isinstance(first, tuple)
+        assert all(isinstance(row, tuple) for row in first)

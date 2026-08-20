@@ -155,7 +155,10 @@ export default function BestLocation({
       : rec?.status === "switch"
         ? `A better saved site is available: ${recommended.name}`
         : rec?.status === "stay_nearby"
-          ? `Stay at ${recommended.name}, nothing clearer is worth the drive`
+          // Deliberately distance-neutral: the runner-up may be 60 km away
+          // or on another continent, and "worth the drive" is wrong for one
+          // of those. The reason line underneath states the actual distance.
+          ? `Stay at ${recommended.name}, nothing clearer is near enough`
           : `${recommended.name} is your best site tonight`;
 
   const detail = rec?.reason ?? "";

@@ -40,6 +40,9 @@ type RatedTarget = {
   reason?: string | null;
   suitability?: Suitability | null;
   suitability_reason?: string | null;
+  peak_altitude_deg?: number | null;
+  peak_time_local?: string | null;
+  peak_suitability?: Suitability | null;
 };
 
 type NightInfo = {
@@ -120,6 +123,30 @@ const SUITABILITY_RANK: Record<Suitability, number> = {
   poor: 2,
   very_poor: 1,
 };
+
+// A target low at the sample time may be the best thing in the sky by 4am.
+// Only worth saying when the climb is big enough to change the verdict, so
+// the note means "wait for this one" rather than restating the altitude.
+const PEAK_WORTH_MENTIONING_DEG = 8;
+
+function laterPeak(target: RatedTarget): string | null {
+  const { peak_altitude_deg: peak, peak_time_local: at } = target;
+  if (peak == null || !at) return null;
+  if (peak - target.altitude_deg < PEAK_WORTH_MENTIONING_DEG) return null;
+  const now = target.suitability ? SUITABILITY_RANK[target.suitability] : 0;
+  const best = target.peak_suitability ? SUITABILITY_RANK[target.peak_suitability] : 0;
+  if (best <= now) return null;
+  return `Rises to ${Math.round(peak)}° by ${formatClock(at)}`;
+}
+
+// "04:20" -> "4:20 AM", matching the times shown elsewhere in the panel.
+function formatClock(hhmm: string): string {
+  const [h, m] = hhmm.split(":").map(Number);
+  if (Number.isNaN(h) || Number.isNaN(m)) return hhmm;
+  const suffix = h < 12 ? "AM" : "PM";
+  const hour = h % 12 === 0 ? 12 : h % 12;
+  return `${hour}:${String(m).padStart(2, "0")} ${suffix}`;
+}
 
 function targetGroup(target: RatedTarget): Exclude<TargetGroup, "all"> {
   if (target.category === "planet" || target.category === "moon") {
@@ -681,6 +708,9 @@ export default function TonightPanel({
                     const rating = target.suitability
                       ? SUITABILITY_LABELS[target.suitability]
                       : null;
+                    // Say *why* a target is rated as it is. Without this a row
+                    // reading "Poor" under a 0% cloud forecast looks like a bug.
+                    const climb = laterPeak(target);
                     return (
                       <div key={target.name} className="target-browser-row">
                         <span aria-hidden>{KIND_ICONS[target.kind]}</span>
@@ -700,7 +730,23 @@ export default function TonightPanel({
                           <div style={{ fontSize: fontSize.small, color: text.muted }}>
                             {rating && <span style={{ color: rating.color }}>{rating.label} · </span>}
                             {Math.round(target.altitude_deg)}° · {degToCompass(target.azimuth_deg)}
+                            {target.suitability_reason ? ` · ${target.suitability_reason}` : ""}
                           </div>
+                          {climb && (
+                            <div
+                              style={{
+                                fontSize: fontSize.micro,
+                                color: target.peak_suitability
+                                  ? SUITABILITY_LABELS[target.peak_suitability].color
+                                  : text.muted,
+                                whiteSpace: "nowrap",
+                                overflow: "hidden",
+                                textOverflow: "ellipsis",
+                              }}
+                            >
+                              {climb}
+                            </div>
+                          )}
                         </div>
                         <button
                           type="button"

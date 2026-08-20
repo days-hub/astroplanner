@@ -151,9 +151,18 @@ class NightInfo(BaseModel):
     moon_up_fraction: Optional[float] = None  # of the dark window, 0..1
 
 class RatedTarget(VisibleTarget):
-    """A visible target plus how worthwhile it actually is tonight."""
+    """A visible target plus how worthwhile it actually is tonight.
+
+    suitability describes the sample time. peak_* describe the best the
+    target manages at any point in the dark window, which is a different
+    question: Saturn low in the east at 11pm is genuinely poor *then* and
+    genuinely good at 4am, and only saying the first is misleading.
+    """
     suitability: Optional[Literal["good", "fair", "poor", "very_poor"]] = None
     suitability_reason: Optional[str] = None
+    peak_altitude_deg: Optional[float] = None
+    peak_time_local: Optional[str] = None
+    peak_suitability: Optional[Literal["good", "fair", "poor", "very_poor"]] = None
 
 
 class CloudPoint(BaseModel):
@@ -1001,6 +1010,16 @@ async def tonight_summary(
     # representative one-hour-into-darkness snapshot.
     sample_utc, sample_is_now = _target_sample_time(night, zone)
 
+    # How high each target ever gets tonight, so a rising planet isn't
+    # written off for where it happens to sit at the sample time.
+    peak_start, peak_end = _night_window(night, zone)
+    peaks = {
+        name: (altitude, when)
+        for name, altitude, when in _target_peaks_cached(
+            *_coord_key(loc.latitude, loc.longitude), peak_start, peak_end
+        )
+    }
+
     rated: List[RatedTarget] = []
     for t in compute_visible_targets(loc.latitude, loc.longitude, sample_utc):
         target = RatedTarget(**t.model_dump())
@@ -1008,6 +1027,19 @@ async def tonight_summary(
             target.suitability, target.suitability_reason = rate_target(
                 kind=t.kind,
                 altitude_deg=t.altitude_deg,
+                cloud_cover_percent=night.cloud_cover_percent,
+                moon_illumination=night.moon_illumination,
+                moon_up_fraction=night.moon_up_fraction or 0.0,
+            )
+
+        peak = peaks.get(t.name)
+        if peak is not None:
+            peak_altitude, peak_when = peak
+            target.peak_altitude_deg = round(peak_altitude, 1)
+            target.peak_time_local = peak_when.astimezone(zone).strftime("%H:%M")
+            target.peak_suitability, _ = rate_target(
+                kind=t.kind,
+                altitude_deg=peak_altitude,
                 cloud_cover_percent=night.cloud_cover_percent,
                 moon_illumination=night.moon_illumination,
                 moon_up_fraction=night.moon_up_fraction or 0.0,
@@ -1185,6 +1217,56 @@ def compute_visible_targets(
     """
     cached = _visible_targets_cached(*_coord_key(latitude, longitude), when_utc)
     return [t.model_copy() for t in cached]
+
+
+# 20 minutes resolves a rising planet's climb without pretending to more
+# precision than an altitude band uses; the cap keeps a 14-hour winter night
+# from ballooning the array.
+_PEAK_STEP_MINUTES = 20
+_PEAK_MAX_SAMPLES = 48
+
+
+@lru_cache(maxsize=_CACHE_SIZE)
+def _target_peaks_cached(
+    latitude: float,
+    longitude: float,
+    window_start: datetime,
+    window_end: datetime,
+) -> tuple[tuple[str, float, datetime], ...]:
+    """The best altitude each target reaches during the dark window.
+
+    Rating a target at a single instant judges the whole night by its first
+    hour. Skyfield evaluates an entire time array in one pass, so sampling
+    the window costs about what the single instant it supplements costs; a
+    loop over the same times is roughly ten times slower.
+
+    Returns immutable tuples: the result is cached, so it must not hand out
+    anything a caller could mutate.
+    """
+    span_minutes = max(1.0, (window_end - window_start).total_seconds() / 60.0)
+    steps = min(_PEAK_MAX_SAMPLES, max(2, int(span_minutes // _PEAK_STEP_MINUTES) + 1))
+    times = [
+        window_start + timedelta(minutes=span_minutes * i / (steps - 1))
+        for i in range(steps)
+    ]
+    t_arr = ts.from_datetimes(times)
+    topo = earth + wgs84.latlon(latitude, longitude)
+
+    out: list[tuple[str, float, datetime]] = []
+
+    def record(name: str, body) -> None:
+        alt, _az, _distance = topo.at(t_arr).observe(body).apparent().altaz()
+        degrees = alt.degrees
+        i = int(degrees.argmax())
+        out.append((name, float(degrees[i]), times[i]))
+
+    for name, body in PLANETS.items():
+        record(name, body)
+    record("Moon", eph["moon"])
+    for name, _category, ra_h, dec_d in FIXED_TARGETS:
+        record(name, Star(ra_hours=ra_h, dec_degrees=dec_d))
+
+    return tuple(out)
 
 
 @lru_cache(maxsize=_CACHE_SIZE)

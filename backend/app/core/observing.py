@@ -384,10 +384,12 @@ def choose_location(sites: list[dict], current_id: Optional[int]) -> dict:
         return f"{round(d)} km away" if d else "nearby"
 
     def journey(s: dict) -> str:
-        # Anything you could plausibly do after work is "the drive". Past that
-        # it isn't one, and calling 7,826 km a drive reads as a broken string.
+        # Anything you could still reach by road is "the drive" -- Toronto to
+        # Manitoulin is 322 km and unmistakably one. Past a long day at the
+        # wheel it isn't, and calling 7,826 km a drive reads as a broken
+        # string rather than as advice.
         d = s.get("distance_km") or 0
-        return "the drive" if d <= 300 else "the distance"
+        return "the drive" if d <= 800 else "the distance"
 
     def all_sites_tail() -> str:
         return f", the best of your {len(sites)} saved sites." if len(sites) > 1 else "."
